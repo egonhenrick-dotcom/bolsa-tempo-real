@@ -1,0 +1,18 @@
+{
+  "name": "bolsa-saas-pro",
+  "version": "1.0.0",
+  "description": "SaaS de análise de bolsa com Stripe e Supabase",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.101.1",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^5.2.1",
+    "stripe": "^18.5.0",
+    "yahoo-finance2": "^2.14.0"
+  }
+}

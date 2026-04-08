@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bolsa SaaS Pro - Nível 8</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+<div id="upgradeBanner" class="upgrade-banner hidden">
+  <div class="upgrade-banner-text">
+    <strong class="upgrade-banner-title">Desbloqueie todos os recursos com o plano Pro</strong>
+    <span class="upgrade-banner-subtitle">Mais análises, mais recursos e mais velocidade para decidir.</span>
+  </div>
+  <button type="button" class="upgrade-banner-btn">Ver planos</button>
+</div>
+
+  <div class="container">
+    <header class="top-header">
+      <div>
+        <h1>Bolsa SaaS Pro</h1>
+        <p>Painel de mercado com autenticação, planos e dashboard</p>
+      </div>
+      <div class="user-side">
+        <div id="planBadge" class="plan-badge">Plano: Free</div>
+        <div id="usageBadge" class="plan-badge">Restantes hoje: 3</div>
+        <div class="user-chip" id="userBadge">Visitante</div>
+      </div>
+    </header>
+<section class="hero-sales">
+      <h2>Ganhe vantagem no mercado antes dos outros</h2>
+      <p>Acompanhe ações em tempo real, compare ativos e monte sua carteira com inteligência.</p>
+      <div class="hero-buttons">
+        <button onclick="scrollToPlans()" class="cta-primary" type="button">Começar agora</button>
+        <button onclick="handleSearch()" class="cta-secondary" type="button">Testar grátis</button>
+      </div>
+      <div class="social-proof">🔥 +1.000 usuários analisando o mercado todos os dias</div>
+    </section>
+
+    <section class="hero-grid">
+      <div class="card">
+        <div class="section-title-row">
+          <h2>Entrar / Criar conta</h2>
+          <span id="authStatus">Faça login.</span>
+        </div>
+
+        <form id="authForm" class="auth-form" autocomplete="off">
+          <input type="text" name="fakeusernameremembered" autocomplete="username" style="display:none" />
+
+          <input
+            id="authEmail"
+            type="email"
+            name="login_email"
+            placeholder="Seu e-mail"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+
+          <input
+            id="authPassword"
+            type="password"
+            name="new-password"
+            placeholder="Sua senha"
+            autocomplete="new-password"
+          />
+
+          <div class="auth-actions">
+            <button id="signUpBtn" type="button">Cadastrar</button>
+            <button id="signInBtn" type="button">Entrar</button>
+            <button id="signOutBtn" type="button" class="hidden neutral-btn">Sair</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card" id="plans">
+        <div class="section-title-row">
+          <h2>Planos</h2>
+          <span>Checkout via Stripe</span>
+        </div>
+
+        <div class="pricing-grid">
+          <div class="price-card">
+            <h3>Starter</h3>
+            <div class="price">R$ 29<span>/mês</span></div>
+            <p>Watchlist, favoritos, notícias e gráfico.</p>
+            <button id="starterBtn" type="button">Assinar Starter</button>
+          </div>
+
+          <div class="price-card featured">
+            <h3>Pro</h3>
+            <div class="price">R$ 79<span>/mês</span></div>
+            <p>Comparação de ativos, carteira e recursos premium.</p>
+            <button id="proBtn" type="button">Assinar Pro</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="search-box">
+      <div class="autocomplete-field">
+        <input type="text" id="symbolInput" placeholder="Digite o ticker (ex: AAPL ou PETR4)" autocomplete="off" />
+        <div id="symbolSuggestions" class="autocomplete-menu hidden"></div>
+      </div>
+      <div class="autocomplete-field">
+        <input type="text" id="compareInput" placeholder="Comparar com... (Pro)" autocomplete="off" />
+        <div id="compareSuggestions" class="autocomplete-menu hidden"></div>
+      </div>
+      <button id="searchBtn" type="button">Analisar</button>
+      <button id="themeToggle" type="button" class="neutral-btn">🌗</button>
+      <button id="langToggle" type="button" class="neutral-btn">🌍 EN</button>
+    </section>
+    <div id="searchHint" class="search-hint">Busque por ticker ou nome da empresa</div>
+
+    <section class="terminal-shell">
+      <aside class="terminal-sidebar">
+        <section class="market-side-card market-side-intro">
+          <div class="market-side-intro-top">
+            <span class="market-side-kicker">Modo terminal</span>
+            <span class="market-live-dot"></span>
+          </div>
+          <h3>Radar rápido do mercado</h3>
+          <p>Layout mais familiar, foco total na análise e atalhos sempre visíveis.</p>
+        </section>
+
+        <section class="watchlist-section market-side-card">
+          <div class="section-title-row">
+            <h2>Watchlist rápida</h2>
+            <span>Clique para abrir</span>
+          </div>
+
+          <div class="watchlist market-watchlist-vertical" id="watchlist">
+            <button class="watch-btn" data-symbol="AAPL" type="button">AAPL</button>
+            <button class="watch-btn" data-symbol="MSFT" type="button">MSFT</button>
+            <button class="watch-btn" data-symbol="TSLA" type="button">TSLA</button>
+            <button class="watch-btn" data-symbol="NVDA" type="button">NVDA</button>
+            <button class="watch-btn" data-symbol="AMZN" type="button">AMZN</button>
+            <button class="watch-btn" data-symbol="META" type="button">META</button>
+            <button class="watch-btn" data-symbol="PETR4" type="button">PETR4</button>
+            <button class="watch-btn" data-symbol="VALE3" type="button">VALE3</button>
+          </div>
+        </section>
+
+        <section class="watchlist-section market-side-card">
+          <div class="section-title-row">
+            <h2>⭐ Favoritos</h2>
+            <span>Salvos no banco</span>
+          </div>
+          <div class="watchlist market-watchlist-vertical" id="favorites"></div>
+        </section>
+
+        <section id="status" class="status market-side-card">Digite um ticker ou clique em um ativo da watchlist.</section>
+
+        <section id="suggestionsBox" class="card market-side-card"></section>
+        <section id="engagementBox" class="card market-side-card"></section>
+      </aside>
+
+      <div class="terminal-main">
+        <section id="analysisStage" class="analysis-stage">
+          <div class="analysis-stage-top">
+            <div class="analysis-stage-title-wrap">
+              <span class="analysis-kicker">📈 Análise em tempo real</span>
+              <h3 class="analysis-stage-title">Centro da análise</h3>
+              <p class="analysis-stage-subtitle">Resumo visual do ativo, origem dos dados e movimento recente.</p>
+            </div>
+            <div id="analysisStageBadge" class="analysis-stage-badge">Aguardando ativo</div>
+          </div>
+
+          <div class="analysis-hero-strip">
+            <div class="analysis-hero-left">
+              <span class="analysis-hero-label">Preço principal</span>
+              <strong id="analysisHeroPrice" class="analysis-hero-price">--</strong>
+              <span id="analysisHeroMeta" class="analysis-hero-meta">Aguardando análise</span>
+            </div>
+            <div class="analysis-hero-right">
+              <span class="analysis-hero-caption">Painel premium</span>
+              <span class="analysis-hero-subcaption">Layout inspirado em plataforma profissional</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="analysis-layout">
+          <div class="analysis-main-column">
+
+            <section id="marketOverview" class="mini-grid"></section>
+
+            <section id="companyCard" class="card hidden">
+              <div class="company-top">
+                <div>
+                  <h2 id="companyName">Empresa</h2>
+                  <p id="companyTicker">Ticker</p>
+                </div>
+
+                <div class="company-actions">
+                  <button id="favBtn" type="button" class="neutral-btn">⭐ Favoritar</button>
+                  <div id="companyExchange" class="badge">Exchange</div>
+                </div>
+              </div>
+            </section>
+
+            <section id="quoteGrid" class="grid hidden">
+              <div class="card stat-card">
+                <span>Preço atual</span>
+                <strong id="currentPrice">-</strong>
+              </div>
+              <div class="card stat-card">
+                <span>Variação %</span>
+                <strong id="changePercent">-</strong>
+              </div>
+              <div class="card stat-card">
+                <span>Abertura</span>
+                <strong id="openPrice">-</strong>
+              </div>
+              <div class="card stat-card">
+                <span>Máxima do dia</span>
+                <strong id="highPrice">-</strong>
+              </div>
+              <div class="card stat-card">
+                <span>Mínima do dia</span>
+                <strong id="lowPrice">-</strong>
+              </div>
+              <div class="card stat-card">
+                <span>Fechamento anterior</span>
+                <strong id="prevClose">-</strong>
+              </div>
+            </section>
+
+            <section id="chartCard" class="card hidden">
+              <div class="chart-header">
+                <h3>Gráfico</h3>
+                <span id="chartLabel">Últimos 7 dias</span>
+              </div>
+              <div id="chart"></div>
+            </section>
+
+            <section id="newsSection" class="card hidden">
+              <div class="section-title-row">
+                <h3>Notícias recentes</h3>
+                <span id="newsSymbol">Ativo</span>
+              </div>
+              <div id="newsList" class="news-list"></div>
+            </section>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="portfolioSection" class="card hidden">
+      <div class="section-title-row">
+        <h3>Carteira Pro</h3>
+        <span id="portfolioStatus">Disponível para plano Pro</span>
+      </div>
+
+      <div class="portfolio-form">
+        <input type="text" id="portfolioSymbol" placeholder="Ativo (ex: AAPL ou PETR4)" />
+        <input type="number" id="portfolioQuantity" placeholder="Quantidade" />
+        <input type="number" step="0.01" id="portfolioAvgPrice" placeholder="Preço médio" />
+        <button id="addPortfolioBtn" type="button">Salvar</button>
+      </div>
+
+      <div id="portfolioSummary" class="card portfolio-summary-card hidden"></div>
+      <div id="portfolioList" class="portfolio-list"></div>
+    </section>
+  
+
+    <!-- ========================= -->
+    <!-- NÍVEL 8 ADMIN PANEL -->
+    <!-- ========================= -->
+    <section id="adminSection" class="card hidden">
+      <div class="section-title-row">
+        <h3>🛠 Painel Admin</h3>
+        <span id="adminStatus">Aguardando dados...</span>
+      </div>
+
+      <div class="grid">
+        <div class="card stat-card"><span>Total usuários</span><strong id="adminTotalUsers">-</strong></div>
+        <div class="card stat-card"><span>Pagantes</span><strong id="adminPaidUsers">-</strong></div>
+        <div class="card stat-card"><span>Free</span><strong id="adminFreeUsers">-</strong></div>
+        <div class="card stat-card"><span>Starter</span><strong id="adminStarterUsers">-</strong></div>
+        <div class="card stat-card"><span>Pro</span><strong id="adminProUsers">-</strong></div>
+        <div class="card stat-card"><span>Online agora</span><strong id="adminOnlineUsers">-</strong></div>
+        <div class="card stat-card"><span>Limite atingido hoje</span><strong id="adminDailyLimitToday">-</strong></div>
+        <div class="card stat-card"><span>Carteira bloqueada hoje</span><strong id="adminBlockedPortfolioToday">-</strong></div>
+        <div class="card stat-card"><span>Checkouts iniciados hoje</span><strong id="adminCheckoutStartedToday">-</strong></div>
+        <div class="card stat-card"><span>Análises hoje</span><strong id="adminQuotesAnalyzedToday">-</strong></div>
+      </div>
+
+      
+      <div class="admin-toolbar">
+        <button id="adminRefreshBtn" type="button" class="neutral-btn">Atualizar painel</button>
+        <div class="admin-filters">
+          <button type="button" class="neutral-btn admin-filter-btn is-active" data-filter="all">Todos</button>
+          <button type="button" class="neutral-btn admin-filter-btn" data-filter="online">Online</button>
+          <button type="button" class="neutral-btn admin-filter-btn" data-filter="free">Free</button>
+          <button type="button" class="neutral-btn admin-filter-btn" data-filter="starter">Starter</button>
+          <button type="button" class="neutral-btn admin-filter-btn" data-filter="pro">Pro</button>
+        </div>
+      </div>
+
+
+      
+      <div id="diagnosticsPanelWrapper" class="diagnostics-admin-block">
+        <div class="section-title-row" style="margin-top:20px;">
+          <h3>🛰 Diagnóstico extremo</h3>
+          <span id="diagnosticsSummary">Aguardando varredura...</span>
+        </div>
+        <div class="diagnostics-actions">
+          <button id="runDiagnosticsBtn" type="button">Rodar diagnóstico extremo</button>
+          <span id="diagnosticsLastRun" class="diagnostics-last-run">Nunca executado</span>
+        </div>
+        <div id="diagnosticsPanel" class="diagnostics-panel">
+          <div id="diagnosticsList" class="diagnostics-grid"></div>
+        </div>
+        <div class="diagnostics-console-wrap">
+          <div class="diagnostics-console-title">Console interno</div>
+          <pre id="diagnosticsConsole" class="diagnostics-console">Sem logs ainda.</pre>
+        </div>
+      </div>
+
+      <div class="section-title-row" style="margin-top:20px;">
+        <h3>🔥 Leads quentes</h3>
+        <span>Usuários com maior intenção</span>
+      </div>
+
+      <div id="adminHotLeadsList" class="portfolio-list"></div>
+
+      <div class="section-title-row" style="margin-top:20px;">
+        <h3>👥 Usuários</h3>
+        <span>Lista completa</span>
+      </div>
+
+      <div id="adminUsersList" class="portfolio-list"></div>
+    </section>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

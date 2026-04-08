@@ -2096,7 +2096,14 @@ async function signUp() {
   try {
     setAuthButtonsDisabled(true);
     const auth = getSupabaseAuthOrThrow();
-    const { data, error } = await auth.signUp({ email, password });
+    const redirectUrl = (appConfig?.appUrl || window.location.origin || "").replace(/\/$/, "");
+    const { data, error } = await auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: redirectUrl,
+      },
+    });
 
     if (error) {
       setAuthStatus(error.message);

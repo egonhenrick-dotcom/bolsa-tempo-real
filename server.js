@@ -106,7 +106,10 @@ app.use((req, res, next) => {
 
   next();
 });
-app.use(express.static(path.join(__dirname, "public"), {
+const publicDir = path.join(__dirname, "public");
+const publicIndexFile = path.join(publicDir, "index.html");
+
+app.use(express.static(publicDir, {
   etag: true,
   maxAge: "7d",
   setHeaders(res, filePath) {
@@ -123,6 +126,19 @@ app.use(express.static(path.join(__dirname, "public"), {
     res.setHeader("Cache-Control", "public, max-age=3600");
   }
 }));
+
+app.get("/", (req, res, next) => {
+  res.sendFile(publicIndexFile, (error) => {
+    if (!error) return;
+
+    console.error("Falha ao servir index.html:", error.message);
+    if (!res.headersSent) {
+      res.status(error.statusCode || 500).send("index.html não encontrado na pasta public.");
+    } else {
+      next(error);
+    }
+  });
+});
 
 const apiCache = new Map();
 const rateLimitStore = new Map();
@@ -1950,6 +1966,19 @@ app.post("/api/stripe/webhook", async (req, res) => {
     console.error("Webhook error:", error.message);
     res.status(400).json({ error: `Webhook error: ${error.message}` });
   }
+});
+
+app.get(/^(?!\/api(?:\/|$)).*/, (req, res, next) => {
+  if (path.extname(req.path)) {
+    return next();
+  }
+
+  res.sendFile(publicIndexFile, (error) => {
+    if (!error) return;
+
+    console.error("Falha ao servir fallback do frontend:", error.message);
+    next(error);
+  });
 });
 
 app.use("/api", (req, res) => {

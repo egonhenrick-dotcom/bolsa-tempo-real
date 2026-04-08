@@ -26,6 +26,7 @@ let authSyncChannel = null;
 let authSyncListenerReady = false;
 let authRefreshPromise = null;
 let authRefreshTimer = null;
+let authInitFailed = false;
 let backendHealthTimer = null;
 let checkoutInFlight = false;
 let networkBannerEl = null;
@@ -256,7 +257,6 @@ function startAutoRefresh(symbol) {
       if (isSearchingNow) return;
       if (isAutoRefreshing) return;
 
-      // 🔴 BLOQUEIO FORTE
       if (window.__refreshLock) return;
       window.__refreshLock = true;
 
@@ -337,6 +337,7 @@ const authPassword = document.getElementById("authPassword");
 const signUpBtn = document.getElementById("signUpBtn");
 const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
+const logoutTopBtn = document.getElementById("logoutTopBtn");
 const userBadge = document.getElementById("userBadge");
 const planBadge = document.getElementById("planBadge");
 
@@ -354,7 +355,6 @@ let activeSuggestionIndex = -1;
 let latestSymbolSuggestions = [];
 let latestCompareSuggestions = [];
 const autocompleteCache = new Map();
-
 
 function normalizeSymbol(rawSymbol) {
   let symbol = String(rawSymbol || "").trim().toUpperCase();
@@ -497,6 +497,55 @@ function setAuthStatus(message) {
   if (authStatus) authStatus.textContent = message;
 }
 
+function updateAuthPanelUI() {
+  const authForm = document.getElementById("authForm");
+  const authCard = document.getElementById("authCard");
+
+  if (currentUser) {
+    if (userBadge) {
+      userBadge.textContent = currentUser.email || "Usuário";
+    }
+
+    if (authForm) authForm.style.display = "none";
+    if (authCard) authCard.style.display = "none";
+
+    if (signOutBtn) signOutBtn.classList.remove("hidden");
+    if (logoutTopBtn) {
+      logoutTopBtn.classList.remove("hidden");
+      logoutTopBtn.textContent = currentLang === "en" ? "Logout" : "Sair";
+      logoutTopBtn.disabled = false;
+    }
+
+    if (signUpBtn) signUpBtn.classList.add("hidden");
+    if (signInBtn) signInBtn.classList.add("hidden");
+
+    if (authStatus) authStatus.textContent = "";
+    return;
+  }
+
+  if (userBadge) {
+    userBadge.textContent = t("visitor");
+  }
+
+  if (authCard) {
+    authCard.style.display = "block";
+    authCard.classList.remove("hidden");
+  }
+
+  if (authForm) {
+    authForm.style.display = "block";
+  }
+
+  if (logoutTopBtn) {
+    logoutTopBtn.classList.add("hidden");
+    logoutTopBtn.disabled = false;
+    logoutTopBtn.textContent = currentLang === "en" ? "Logout" : "Sair";
+  }
+
+  if (signOutBtn) signOutBtn.classList.add("hidden");
+  if (signUpBtn) signUpBtn.classList.remove("hidden");
+  if (signInBtn) signInBtn.classList.remove("hidden");
+}
 function updateAnalysisStageBadge(label, tone = "neutral") {
   if (!analysisStageBadge) return;
   analysisStageBadge.textContent = label || "Aguardando ativo";
@@ -628,7 +677,18 @@ function notifyAuthSync(type = "session", payload = {}) {
   } catch {}
 }
 
+// ==================== FUNÇÃO CORRIGIDA scheduleAuthRefresh ====================
 function scheduleAuthRefresh(reason = "sync", delay = 0) {
+  if (!supabaseClient || !supabaseClient.auth) {
+    console.log(`⏸️ scheduleAuthRefresh ignorado: Supabase não pronto (${reason})`);
+    return;
+  }
+  
+  if (authInitFailed) {
+    console.log(`⏸️ scheduleAuthRefresh ignorado: authInitFailed (${reason})`);
+    return;
+  }
+
   if (authRefreshTimer) {
     clearTimeout(authRefreshTimer);
     authRefreshTimer = null;
@@ -636,6 +696,11 @@ function scheduleAuthRefresh(reason = "sync", delay = 0) {
 
   authRefreshTimer = setTimeout(() => {
     authRefreshTimer = null;
+
+    if (!supabaseClient || !supabaseClient.auth || authInitFailed) {
+      return;
+    }
+
     refreshAuthState(reason).catch((error) => {
       console.error("auth refresh error:", error?.message || error);
     });
@@ -734,6 +799,7 @@ function resetClientSessionState({ clearForm = true, statusMessage = "" } = {}) 
   refreshUsage().catch(() => {});
   toggleAdminSection();
   clearAuthFields(clearForm);
+  updateAuthPanelUI();
 
   if (statusMessage) {
     setAuthStatus(statusMessage);
@@ -986,7 +1052,6 @@ async function refreshUsage() {
   }
 }
 
-
 async function fetchUsage() {
   return refreshUsage();
 }
@@ -1118,7 +1183,6 @@ async function toggleFavorite(symbol) {
   renderFavorites();
   updateFavoriteButton();
 }
-
 
 function toChartTime(value) {
   if (!value) return null;
@@ -1997,6 +2061,29 @@ async function savePortfolio() {
   }
 }
 
+function isSupabaseReady() {
+  return !!(supabaseClient && supabaseClient.auth && typeof supabaseClient.auth.getSession === "function");
+}
+
+function setAuthButtonsDisabled(disabled) {
+  [signUpBtn, signInBtn, signOutBtn, logoutTopBtn].forEach((btn) => {
+    if (btn) btn.disabled = !!disabled;
+  });
+}
+
+function getSupabaseAuthOrThrow() {
+  if (!supabaseClient) {
+    throw new Error("Sistema de login não inicializado. Recarregue a página.");
+  }
+  if (!supabaseClient.auth) {
+    throw new Error("Módulo de autenticação indisponível. Recarregue a página.");
+  }
+  if (authInitFailed) {
+    throw new Error("Falha na inicialização do login. Recarregue a página.");
+  }
+  return supabaseClient.auth;
+}
+
 async function signUp() {
   const email = authEmail?.value.trim();
   const password = authPassword?.value.trim();
@@ -2006,57 +2093,98 @@ async function signUp() {
     return;
   }
 
-  const { data, error } = await supabaseClient.auth.signUp({ email, password });
-  if (error) {
-    setAuthStatus(error.message);
-    return;
-  }
+  try {
+    setAuthButtonsDisabled(true);
+    const auth = getSupabaseAuthOrThrow();
+    const { data, error } = await auth.signUp({ email, password });
 
-  const session = data.session;
-  if (session?.access_token) {
-    setAccessToken(session.access_token);
-    notifyAuthSync("signed_in", { email: data.user?.email || email });
-  }
+    if (error) {
+      setAuthStatus(error.message);
+      return;
+    }
 
-  currentUser = data.user || null;
-  setAuthStatus(t("signupDone"));
-  await refreshAuthState("sign-up");
-  clearAuthFields(true);
+    const session = data?.session || null;
+    if (session?.access_token) {
+      setAccessToken(session.access_token);
+      currentUser = data?.user || null;
+      updateAuthPanelUI();
+      await refreshAuthState("sign-up");
+      notifyAuthSync("signed_in", { email: data?.user?.email || email });
+      clearAuthFields(true);
+      return;
+    }
+
+    currentUser = null;
+    updateAuthPanelUI();
+    setAuthStatus("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
+    clearAuthFields(false);
+  } catch (error) {
+    console.error("signUp error:", error?.message || error);
+    setAuthStatus(error?.message || "Falha ao cadastrar.");
+  } finally {
+    setAuthButtonsDisabled(false);
+  }
 }
 
 async function signIn() {
   const email = authEmail?.value.trim();
   const password = authPassword?.value.trim();
 
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  if (error) {
-    setAuthStatus(error.message);
+  if (!email || !password) {
+    setAuthStatus(t("enterEmailPassword"));
     return;
   }
 
-  if (data?.session?.access_token) {
-    setAccessToken(data.session.access_token);
-  }
+  try {
+    setAuthButtonsDisabled(true);
+    const auth = getSupabaseAuthOrThrow();
+    const { data, error } = await auth.signInWithPassword({ email, password });
 
-  currentUser = data.user || null;
-  setAuthStatus(t("signinDone"));
-  await refreshAuthState("sign-in");
-  notifyAuthSync("signed_in", { email: currentUser?.email || email });
-  clearAuthFields(true);
+    if (error) {
+      setAuthStatus(error.message);
+      return;
+    }
+
+    if (data?.session?.access_token) {
+      setAccessToken(data.session.access_token);
+    }
+
+    currentUser = data?.user || null;
+    updateAuthPanelUI();
+    setAuthStatus("");
+    await refreshAuthState("sign-in");
+    notifyAuthSync("signed_in", { email: currentUser?.email || email });
+    clearAuthFields(true);
+  } catch (error) {
+    console.error("signIn error:", error?.message || error);
+    setAuthStatus(error?.message || "Falha ao entrar.");
+  } finally {
+    setAuthButtonsDisabled(false);
+  }
 }
 
 async function signOut() {
   try {
+    setAuthButtonsDisabled(true);
     isSigningOutNow = true;
-    await supabaseClient.auth.signOut();
+
+    if (isSupabaseReady()) {
+      const auth = getSupabaseAuthOrThrow();
+      await auth.signOut();
+    }
+  } catch (error) {
+    console.error("signOut error:", error?.message || error);
   } finally {
     setAccessToken("");
+    currentUser = null;
     resetClientSessionState({
       clearForm: false,
       statusMessage: t("sessionEnded")
     });
+    updateAuthPanelUI();
     notifyAuthSync("signed_out");
     isSigningOutNow = false;
+    setAuthButtonsDisabled(false);
   }
 }
 
@@ -2097,7 +2225,18 @@ async function startCheckout(plan) {
   }
 }
 
+// ==================== FUNÇÃO CORRIGIDA refreshAuthState ====================
 async function refreshAuthState(reason = "manual") {
+  if (!supabaseClient || !supabaseClient.auth) {
+    console.warn(`⚠️ refreshAuthState ignorado: Supabase não pronto (${reason})`);
+    return { user: null, reason: `${reason}:no-supabase` };
+  }
+
+  if (authInitFailed) {
+    console.warn(`⚠️ refreshAuthState ignorado: authInitFailed (${reason})`);
+    return { user: null, reason: `${reason}:init-failed` };
+  }
+
   if (authRefreshPromise) {
     return authRefreshPromise;
   }
@@ -2113,22 +2252,30 @@ async function refreshAuthState(reason = "manual") {
         setAccessToken("");
       }
 
-      let nextUser = null;
+      let nextUser = session?.user || null;
 
       if (session?.access_token) {
         try {
           const { data, error } = await supabaseClient.auth.getUser(session.access_token);
-          if (!error) {
-            nextUser = data?.user || null;
+          if (!error && data?.user) {
+            nextUser = data.user;
           }
-        } catch {}
+        } catch (err) {
+          console.warn("getUser falhou:", err.message);
+        }
       }
 
+      const previousUser = currentUser;
       currentUser = nextUser;
+
+      if (previousUser !== currentUser) {
+        updateAuthPanelUI();
+      }
 
       if (currentUser) {
         if (authEmail) authEmail.value = currentUser.email || "";
         if (authPassword) authPassword.value = "";
+        setAuthStatus("");
 
         await loadSubscription();
         await syncFavoritesFromServer();
@@ -2138,20 +2285,27 @@ async function refreshAuthState(reason = "manual") {
         currentPlan = "free";
         currentPlanStatus = "inactive";
         favorites = [];
+
         if (portfolioList) portfolioList.innerHTML = "";
         if (portfolioSummary) {
           portfolioSummary.innerHTML = "";
           portfolioSummary.classList.add("hidden");
         }
+
         if (authPassword) authPassword.value = "";
         renderFavorites();
         stopPresenceHeartbeat();
+        updateAuthPanelUI();
       }
 
       updatePlanUI();
       await refreshUsage();
-      await fetchAdminMe();
+      await fetchAdminMine();
+
       return { user: currentUser, reason };
+    } catch (error) {
+      console.error("refreshAuthState error:", error?.message || error);
+      return { user: null, reason: `${reason}:error` };
     } finally {
       authRefreshPromise = null;
     }
@@ -2160,41 +2314,96 @@ async function refreshAuthState(reason = "manual") {
   return authRefreshPromise;
 }
 
+// ==================== FUNÇÃO CORRIGIDA initSupabase ====================
 async function initSupabase() {
-  appConfig = await fetchJSON("/api/public-config");
-  supabaseClient = window.supabase.createClient(appConfig.supabaseUrl, appConfig.supabaseAnonKey);
-  attachAuthSyncListeners();
+  try {
+    authInitFailed = false;
+    
+    console.log("🚀 Iniciando Supabase...");
+    appConfig = await fetchJSON("/api/public-config");
 
-  supabaseClient.auth.onAuthStateChange((event, session) => {
-    if (session?.access_token) {
-      setAccessToken(session.access_token);
-    } else if (event === "SIGNED_OUT") {
-      setAccessToken("");
+    if (!window.supabase?.createClient) {
+      throw new Error("Biblioteca do Supabase não carregou.");
     }
 
-    if (event === "SIGNED_OUT") {
-      if (!isSigningOutNow) {
-        resetClientSessionState({
-          clearForm: false,
-          statusMessage: t("sessionEnded")
-        });
-        notifyAuthSync("signed_out");
+    if (!appConfig?.supabaseUrl || !appConfig?.supabaseAnonKey) {
+      throw new Error("Configuração pública do login está incompleta.");
+    }
+
+    console.log("✅ Config carregada, criando cliente...");
+    const client = window.supabase.createClient(appConfig.supabaseUrl, appConfig.supabaseAnonKey);
+    
+    if (!client || !client.auth || typeof client.auth.getSession !== "function") {
+      throw new Error("Supabase Auth não inicializou corretamente.");
+    }
+
+    supabaseClient = client;
+    console.log("✅ Cliente Supabase criado com sucesso");
+    
+    attachAuthSyncListeners();
+
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      console.log("🔄 Auth state change:", event);
+      
+      if (authInitFailed || !supabaseClient) return;
+
+      if (session?.access_token) {
+        setAccessToken(session.access_token);
+      } else if (event === "SIGNED_OUT") {
+        setAccessToken("");
       }
-      return;
-    }
 
-    if (["SIGNED_IN", "TOKEN_REFRESHED", "USER_UPDATED", "INITIAL_SESSION", "PASSWORD_RECOVERY"].includes(event)) {
-      if (event === "TOKEN_REFRESHED") {
-        notifyAuthSync("token_updated");
-      } else {
-        notifyAuthSync("session_refresh", { event });
+      if (event === "SIGNED_OUT") {
+        if (!isSigningOutNow) {
+          currentUser = null;
+          resetClientSessionState({
+            clearForm: false,
+            statusMessage: t("sessionEnded")
+          });
+          notifyAuthSync("signed_out");
+        }
+        updateAuthPanelUI();
+        return;
       }
-      scheduleAuthRefresh(`supabase:${event}`, event === "INITIAL_SESSION" ? 0 : 60);
-    }
-  });
 
-  await refreshAuthState("init-supabase");
-  setAuthStatus(currentUser ? t("signinDone") : t("loginRequired"));
+      if (["SIGNED_IN", "TOKEN_REFRESHED", "USER_UPDATED"].includes(event)) {
+        if (session?.user) {
+          currentUser = session.user;
+        }
+        updateAuthPanelUI();
+        updatePlanUI();
+        
+        if (event === "TOKEN_REFRESHED") {
+          notifyAuthSync("token_updated");
+        } else {
+          notifyAuthSync("session_refresh", { event });
+        }
+      }
+    });
+
+    console.log("🔄 Chamando refreshAuthState inicial...");
+    await refreshAuthState("init-supabase");
+    
+    updateAuthPanelUI();
+    updatePlanUI();
+
+    if (!currentUser) {
+      setAuthStatus("Faça login.");
+    } else {
+      setAuthStatus(currentLang === "en" ? "Logged in." : "Logado.");
+    }
+    
+    console.log("✅ Supabase inicializado com sucesso");
+  } catch (error) {
+    console.error("❌ initSupabase error:", error?.message || error);
+    authInitFailed = true;
+    supabaseClient = null;
+    currentUser = null;
+    setAccessToken("");
+    updateAuthPanelUI();
+    updatePlanUI();
+    setAuthStatus(error?.message || "Falha ao iniciar login. Recarregue a página.");
+  }
 }
 
 function applyTranslations() {
@@ -2212,6 +2421,7 @@ function applyTranslations() {
   if (signUpBtn) signUpBtn.textContent = t("signup");
   if (signInBtn) signInBtn.textContent = t("signin");
   if (signOutBtn) signOutBtn.textContent = t("logout");
+  if (logoutTopBtn) logoutTopBtn.textContent = t("logout");
 
   const planHeader = document.querySelectorAll(".hero-grid .card .section-title-row h2")[1];
   if (planHeader) planHeader.textContent = t("plans");
@@ -2324,6 +2534,7 @@ function bindEvents() {
   if (signUpBtn) signUpBtn.onclick = signUp;
   if (signInBtn) signInBtn.onclick = signIn;
   if (signOutBtn) signOutBtn.onclick = signOut;
+  if (logoutTopBtn) logoutTopBtn.onclick = signOut;
   if (starterBtn) starterBtn.onclick = () => startCheckout("starter");
   if (proBtn) proBtn.onclick = () => startCheckout("pro");
   if (addPortfolioBtn) addPortfolioBtn.onclick = savePortfolio;
@@ -2444,7 +2655,8 @@ async function init() {
   clearAuthFields(false);
   await initSupabase();
   applyTranslations();
- 
+  updatePlanUI();
+  
   if (symbolInput) symbolInput.value = "AAPL";
   setSearchHint();
   if (typeof renderDynamicMarketLists === "function") renderDynamicMarketLists();
@@ -3101,8 +3313,6 @@ function quickAnalyze(symbol) {
   handleSearch();
 }
 
-// Consolidação Fase E3: wrappers antigos removidos e integrados nas funções principais.
-
 // =========================
 // MODO DIAGNÓSTICO — VALIDAÇÃO GERAL
 // =========================
@@ -3333,4 +3543,73 @@ function syncActiveMarketButtons() {
     const btnSymbol = displaySymbol(normalizeSymbol(btn.dataset.symbol || btn.textContent || ""));
     btn.classList.toggle("watch-btn-active", !!active && btnSymbol === active);
   });
+}
+
+
+
+// ===============================
+// FUNÇÃO COMPLETA - fetchAdminMine
+// ===============================
+async function fetchAdminMine() {
+  try {
+    if (!currentAccessToken) {
+      console.warn("fetchAdminMine: sem token");
+      return null;
+    }
+
+    const res = await fetch("/api/admin/me", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${currentAccessToken}`,
+        "Content-Type": "application/json"
+      }
+    });
+
+    if (res.status === 403) {
+      console.log("Usuário não é admin");
+
+      currentPlan = currentPlan || "free";
+      currentPlanStatus = currentPlanStatus || "active";
+
+      if (typeof updatePlanUI === "function") {
+        updatePlanUI();
+      }
+
+      return { role: "user" };
+    }
+
+    if (!res.ok) {
+      console.warn("fetchAdminMine erro:", res.status);
+      return null;
+    }
+
+    const data = await res.json();
+
+    if (data?.plan) currentPlan = data.plan;
+    if (data?.status) currentPlanStatus = data.status;
+
+    if (typeof updatePlanUI === "function") {
+      updatePlanUI();
+    }
+
+    if (data?.is_admin) {
+      console.log("Admin detectado");
+
+      const adminSection = document.getElementById("adminSection");
+      if (adminSection) adminSection.classList.remove("hidden");
+
+      if (typeof loadAdminDashboard === "function") {
+        loadAdminDashboard();
+      }
+
+      if (typeof loadAdminUsers === "function") {
+        loadAdminUsers();
+      }
+    }
+
+    return data;
+  } catch (err) {
+    console.error("fetchAdminMine crash:", err.message);
+    return null;
+  }
 }

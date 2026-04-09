@@ -30,6 +30,7 @@ let authInitFailed = false;
 let backendHealthTimer = null;
 let checkoutInFlight = false;
 let networkBannerEl = null;
+let latestAnalysisSnapshot = null;
 const AUTH_SYNC_EVENT_KEY = "bolsa-auth-sync-event";
 
 const translations = {
@@ -627,6 +628,16 @@ function afterSuccessfulAnalysis(symbol) {
   } catch {}
 }
 
+function resetSmartPremiumPanel() {
+  const panel = document.querySelector(".analysis-hero-right");
+  if (!panel) return;
+
+  panel.innerHTML = `
+    <span class="analysis-hero-caption">${currentLang === "en" ? "Smart panel" : "Painel inteligente"}</span>
+    <span class="analysis-hero-subcaption">${currentLang === "en" ? "Waiting for a live reading to unlock trend, zones and timing." : "Aguardando uma leitura ao vivo para liberar tendência, zonas e timing."}</span>
+  `;
+}
+
 function clearAnalysisUI() {
   currentSymbol = "";
   stopAutoRefresh();
@@ -638,6 +649,8 @@ function clearAnalysisUI() {
   if (newsList) newsList.innerHTML = "";
   if (analysisHeroPrice) analysisHeroPrice.textContent = "--";
   if (analysisHeroMeta) analysisHeroMeta.textContent = currentLang === "en" ? "Waiting for analysis" : "Aguardando análise";
+  latestAnalysisSnapshot = null;
+  resetSmartPremiumPanel();
   updateAnalysisStageBadge(currentLang === "en" ? "Waiting for asset" : "Aguardando ativo", "neutral");
   updateChartHeader("");
   setStatus(t("typeTicker"));
@@ -1439,16 +1452,154 @@ function renderNews(items) {
   });
 }
 
-function renderOverview(quote) {
-  if (!marketOverview) return;
-  marketOverview.innerHTML = `
-    <div class="mini-card market-hero-card">
-      <span class="symbol">${displaySymbol(currentSymbol)}</span>
-      <strong class="price">${formatPrice(quote?.c)}</strong>
-      <span class="change">${getQuoteSourceLabel(quote)}</span>
-    </div>
+function formatSignedPercent(value) {
+  const num = Number(value || 0);
+  if (Number.isNaN(num)) return "0.00%";
+  return `${num >= 0 ? "+" : ""}${num.toFixed(2)}%`;
+}
+
+function getAnalysisHistoryKey() {
+  return "analysis_history_cache_v2";
+}
+
+function getAnalysisHistory() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(getAnalysisHistoryKey()) || "[]");
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAnalysisSnapshot(snapshot) {
+  if (!snapshot?.symbol) return;
+  const current = getAnalysisHistory().filter((item) => item?.symbol !== snapshot.symbol);
+  current.unshift(snapshot);
+  localStorage.setItem(getAnalysisHistoryKey(), JSON.stringify(current.slice(0, 16)));
+}
+
+function scoreNewsTone(items = []) {
+  const positiveTerms = ["beat", "beats", "surge", "growth", "upgrade", "record", "strong", "jump", "partnership", "profit"];
+  const negativeTerms = ["miss", "falls", "drop", "lawsuit", "downgrade", "weak", "cut", "risk", "loss", "probe"];
+  let score = 0;
+
+  items.slice(0, 6).forEach((item) => {
+    const text = `${item?.headline || ""} ${item?.summary || ""}`.toLowerCase();
+    positiveTerms.forEach((term) => { if (text.includes(term)) score += 1; });
+    negativeTerms.forEach((term) => { if (text.includes(term)) score -= 1; });
+  });
+
+  if (score >= 2) return currentLang === "en" ? "Positive flow" : "Fluxo positivo";
+  if (score <= -2) return currentLang === "en" ? "Caution in news" : "Cautela nas notícias";
+  return currentLang === "en" ? "Neutral flow" : "Fluxo neutro";
+}
+
+function buildAnalysisSnapshot(symbol, quote, candles, news = [], profile = {}) {
+  const series = Array.isArray(candles?.c) ? candles.c.map((value) => Number(value)).filter((value) => !Number.isNaN(value)) : [];
+  const validHighs = Array.isArray(candles?.h) ? candles.h.map((value) => Number(value)).filter((value) => !Number.isNaN(value)) : [];
+  const validLows = Array.isArray(candles?.l) ? candles.l.map((value) => Number(value)).filter((value) => !Number.isNaN(value)) : [];
+  const last = Number(quote?.c ?? series[series.length - 1] ?? 0);
+  const first = Number(series[0] ?? quote?.pc ?? last);
+  const changePercent = Number(quote?.dp ?? ((last && first) ? (((last - first) / first) * 100) : 0));
+  const trendBySeries = series.length >= 3 ? ((series[series.length - 1] - series[0]) >= 0 ? "up" : "down") : (changePercent >= 0 ? "up" : "down");
+  const amplitude = series.length ? Math.max(...series) - Math.min(...series) : Math.abs(Number(quote?.h || 0) - Number(quote?.l || 0));
+  const volatilityPercent = last > 0 ? (amplitude / last) * 100 : 0;
+  const supportBase = validLows.length ? Math.min(...validLows.slice(-8)) : Number(quote?.l || last || 0);
+  const resistanceBase = validHighs.length ? Math.max(...validHighs.slice(-8)) : Number(quote?.h || last || 0);
+  const distanceToSupport = last > 0 ? ((last - supportBase) / last) * 100 : 0;
+  const distanceToResistance = last > 0 ? ((resistanceBase - last) / last) * 100 : 0;
+
+  let strength = currentLang === "en" ? "Balanced" : "Equilibrada";
+  if (Math.abs(changePercent) >= 3 || volatilityPercent >= 6) strength = currentLang === "en" ? "Strong" : "Forte";
+  else if (Math.abs(changePercent) >= 1.2 || volatilityPercent >= 3) strength = currentLang === "en" ? "Moderate" : "Moderada";
+
+  let setup = currentLang === "en" ? "Neutral timing" : "Timing neutro";
+  if (distanceToSupport <= 2 && trendBySeries === "up") setup = currentLang === "en" ? "Near support" : "Próximo do suporte";
+  else if (distanceToResistance <= 2 && trendBySeries === "up") setup = currentLang === "en" ? "Testing resistance" : "Testando resistência";
+  else if (distanceToSupport <= 2 && trendBySeries === "down") setup = currentLang === "en" ? "Watching reaction zone" : "Monitorar reação";
+  else if (distanceToResistance <= 2 && trendBySeries === "down") setup = currentLang === "en" ? "Stretched move" : "Movimento esticado";
+
+  const trendLabel = trendBySeries === "up"
+    ? (currentLang === "en" ? "Bullish bias" : "Viés de alta")
+    : (currentLang === "en" ? "Bearish bias" : "Viés de baixa");
+
+  const signalLabel = changePercent >= 0
+    ? (currentLang === "en" ? "Buyers in control" : "Compradores no controle")
+    : (currentLang === "en" ? "Sellers pressing" : "Vendedores pressionando");
+
+  return {
+    symbol: displaySymbol(symbol),
+    companyName: profile?.name || displaySymbol(symbol),
+    price: last,
+    changePercent,
+    trend: trendBySeries,
+    trendLabel,
+    strength,
+    setup,
+    signalLabel,
+    support: Number(supportBase || 0),
+    resistance: Number(resistanceBase || 0),
+    volatilityPercent,
+    newsTone: scoreNewsTone(news),
+    sourceLabel: getQuoteSourceLabel(quote),
+    fetchedAt: Date.now()
+  };
+}
+
+function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
+  const panel = document.querySelector(".analysis-hero-right");
+  if (!panel) return;
+
+  if (!snapshot) {
+    resetSmartPremiumPanel();
+    return;
+  }
+
+  panel.innerHTML = `
+    <span class="analysis-hero-caption">${currentLang === "en" ? "Intelligent reading" : "Leitura inteligente"}</span>
+    <span class="analysis-hero-subcaption">${snapshot.trendLabel} • ${snapshot.strength} • ${snapshot.newsTone}</span>
+    <span class="analysis-hero-subcaption">${currentLang === "en" ? "Support" : "Suporte"}: ${formatPrice(snapshot.support)} • ${currentLang === "en" ? "Resistance" : "Resistência"}: ${formatPrice(snapshot.resistance)}</span>
+    <span class="analysis-hero-subcaption">${snapshot.setup}</span>
   `;
+}
+
+function renderOverview(quote, snapshot = latestAnalysisSnapshot) {
+  if (!marketOverview) return;
+
+  const smartCards = snapshot
+    ? `
+      <div class="mini-card market-hero-card">
+        <span class="symbol">${snapshot.symbol}</span>
+        <strong class="price">${formatPrice(quote?.c)}</strong>
+        <span class="change">${snapshot.sourceLabel}</span>
+      </div>
+      <div class="mini-card">
+        <span>${currentLang === "en" ? "Trend" : "Tendência"}</span>
+        <strong>${snapshot.trendLabel}</strong>
+        <small>${snapshot.signalLabel}</small>
+      </div>
+      <div class="mini-card">
+        <span>${currentLang === "en" ? "Key zones" : "Zonas-chave"}</span>
+        <strong>${formatPrice(snapshot.support)} • ${formatPrice(snapshot.resistance)}</strong>
+        <small>${snapshot.setup}</small>
+      </div>
+      <div class="mini-card">
+        <span>${currentLang === "en" ? "Timing" : "Timing"}</span>
+        <strong>${snapshot.strength}</strong>
+        <small>${snapshot.newsTone}</small>
+      </div>
+    `
+    : `
+      <div class="mini-card market-hero-card">
+        <span class="symbol">${displaySymbol(currentSymbol)}</span>
+        <strong class="price">${formatPrice(quote?.c)}</strong>
+        <span class="change">${getQuoteSourceLabel(quote)}</span>
+      </div>
+    `;
+
+  marketOverview.innerHTML = smartCards;
   updateAnalysisHero(quote, currentSymbol);
+  renderSmartPremiumPanel(snapshot);
 }
 
 function escapeRegExp(value) {
@@ -1800,8 +1951,13 @@ async function handleSearch(silentRefresh = false) {
       const chartInfo = [candles?.source || "chart", candles?.interval || ""].filter(Boolean).join(" • ");
       setStatus(`${t("updatedFor")} ${displaySymbol(symbol)} • ${getQuoteSourceLabel(quote)} • gráfico ${chartInfo}.`);
     }
+    const analysisSnapshot = buildAnalysisSnapshot(symbol, quote, candles, news, profile);
+    latestAnalysisSnapshot = analysisSnapshot;
+    saveAnalysisSnapshot(analysisSnapshot);
+
     renderNews(news);
-    renderOverview(quote);
+    renderOverview(quote, analysisSnapshot);
+    renderSmartPremiumPanel(analysisSnapshot);
     afterSuccessfulAnalysis(symbol);
     syncActiveMarketButtons();
 
@@ -2096,14 +2252,7 @@ async function signUp() {
   try {
     setAuthButtonsDisabled(true);
     const auth = getSupabaseAuthOrThrow();
-    const redirectUrl = (appConfig?.appUrl || window.location.origin || "").replace(/\/$/, "");
-    const { data, error } = await auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-      },
-    });
+    const { data, error } = await auth.signUp({ email, password });
 
     if (error) {
       setAuthStatus(error.message);
@@ -3248,67 +3397,112 @@ function renderDynamicMarketLists() {
   const box = getEngagementBox();
   if (!box) return;
 
+  const history = getAnalysisHistory();
   const recent = getRecentSearches();
-  const recentHtml = recent.length
-    ? recent.map((symbol) => `<button type="button" onclick="quickAnalyze('${symbol}')">${symbol}</button>`).join("")
-    : `<span class="eng-empty">${currentLang === "en" ? "Start analyzing to build your ranking." : "Comece analisando para montar seu ranking."}</span>`;
+
+  const renderButtons = (items, emptyText) => items.length
+    ? items.map((item) => {
+        const symbol = typeof item === "string" ? item : item.symbol;
+        const change = typeof item === "string" ? "" : `<small>${formatSignedPercent(item.changePercent)}</small>`;
+        return `<button type="button" onclick="quickAnalyze('${symbol}')">${symbol}${change}</button>`;
+      }).join("")
+    : `<span class="eng-empty">${emptyText}</span>`;
+
+  if (!history.length) {
+    const starterList = ["AAPL", "NVDA", "MSFT", "PETR4"];
+    box.innerHTML = `
+      <div class="market-side-intro-top">
+        <span class="market-side-kicker">${currentLang === "en" ? "Smart scanner" : "Radar inteligente"}</span>
+        <span class="market-live-dot"></span>
+      </div>
+      <h3>${currentLang === "en" ? "Quick market radar" : "Radar rápido do mercado"}</h3>
+      <p>${currentLang === "en" ? "Analyze a few assets and this block will start ranking momentum, pressure and timing automatically." : "Analise alguns ativos e este bloco começará a ranquear momentum, pressão e timing automaticamente."}</p>
+      <div class="eng-section">
+        <h4>🚀 ${currentLang === "en" ? "Start here" : "Comece por aqui"}</h4>
+        <div class="eng-list">${renderButtons(starterList, "")}</div>
+      </div>
+    `;
+    return;
+  }
+
+  const hottest = [...history].sort((a, b) => Math.abs(b.changePercent || 0) - Math.abs(a.changePercent || 0)).slice(0, 3);
+  const bullish = history.filter((item) => Number(item.changePercent) >= 0).sort((a, b) => Number(b.changePercent) - Number(a.changePercent)).slice(0, 3);
+  const bearish = history.filter((item) => Number(item.changePercent) < 0).sort((a, b) => Number(a.changePercent) - Number(b.changePercent)).slice(0, 3);
+  const latest = [...history].sort((a, b) => Number(b.fetchedAt || 0) - Number(a.fetchedAt || 0)).slice(0, 3);
+
+  const lead = hottest[0] || latest[0] || bullish[0] || bearish[0];
+  const leadText = lead
+    ? `${lead.symbol} ${formatSignedPercent(lead.changePercent)} • ${lead.trendLabel || ""}`.trim()
+    : (currentLang === "en" ? "No active reading yet." : "Sem leitura ativa ainda.");
 
   box.innerHTML = `
+    <div class="market-side-intro-top">
+      <span class="market-side-kicker">${currentLang === "en" ? "Smart scanner" : "Radar inteligente"}</span>
+      <span class="market-live-dot"></span>
+    </div>
+    <h3>${currentLang === "en" ? "Quick market radar" : "Radar rápido do mercado"}</h3>
+    <p>${leadText}</p>
+
     <div class="eng-section">
-      <h4>🔥 Mais analisadas hoje</h4>
-      <div class="eng-list">
-        <button type="button" onclick="quickAnalyze('AAPL')">AAPL</button>
-        <button type="button" onclick="quickAnalyze('TSLA')">TSLA</button>
-        <button type="button" onclick="quickAnalyze('NVDA')">NVDA</button>
-        <button type="button" onclick="quickAnalyze('PETR4')">PETR4</button>
-      </div>
+      <h4>🔥 ${currentLang === "en" ? "Hot pulse" : "Pulso quente"}</h4>
+      <div class="eng-list">${renderButtons(hottest, currentLang === "en" ? "No signals yet." : "Sem sinais ainda.")}</div>
     </div>
 
     <div class="eng-section">
-      <h4>🚀 Subindo agora</h4>
-      <div class="eng-list">
-        <button type="button" onclick="quickAnalyze('META')">META</button>
-        <button type="button" onclick="quickAnalyze('AMZN')">AMZN</button>
-        <button type="button" onclick="quickAnalyze('MSFT')">MSFT</button>
-      </div>
+      <h4>📈 ${currentLang === "en" ? "Buying strength" : "Força compradora"}</h4>
+      <div class="eng-list">${renderButtons(bullish, currentLang === "en" ? "Need more bullish reads." : "Precisa de mais leituras de alta.")}</div>
     </div>
 
     <div class="eng-section">
-      <h4>📉 Caindo forte</h4>
-      <div class="eng-list">
-        <button type="button" onclick="quickAnalyze('VALE3')">VALE3</button>
-        <button type="button" onclick="quickAnalyze('PETR4')">PETR4</button>
-        <button type="button" onclick="quickAnalyze('TSLA')">TSLA</button>
-      </div>
+      <h4>📉 ${currentLang === "en" ? "Selling pressure" : "Pressão vendedora"}</h4>
+      <div class="eng-list">${renderButtons(bearish, currentLang === "en" ? "No bearish pressure in cache." : "Sem pressão de baixa no cache.")}</div>
     </div>
 
     <div class="eng-section">
-      <h4>🕘 Últimas que você viu</h4>
-      <div class="eng-list">${recentHtml}</div>
+      <h4>🕘 ${currentLang === "en" ? "Last readings" : "Últimas leituras"}</h4>
+      <div class="eng-list">${renderButtons(latest, currentLang === "en" ? "Start analyzing." : "Comece analisando.")}</div>
     </div>
   `;
+
+  if (recent.length && !history.some((item) => item.symbol === recent[0])) {
+    box.innerHTML += `
+      <div class="eng-section">
+        <h4>⚡ ${currentLang === "en" ? "Quick revisit" : "Retomar rápido"}</h4>
+        <div class="eng-list">${renderButtons(recent.slice(0, 4), "")}</div>
+      </div>
+    `;
+  }
 }
 
 function renderSuggestions(symbol) {
-  const normalized = displaySymbol(normalizeSymbol(symbol));
+  const normalized = typeof symbol === "string" ? displaySymbol(normalizeSymbol(symbol)) : displaySymbol(normalizeSymbol(symbol?.symbol || currentSymbol));
+  const snapshot = latestAnalysisSnapshot && latestAnalysisSnapshot.symbol === normalized ? latestAnalysisSnapshot : getAnalysisHistory().find((item) => item.symbol === normalized) || latestAnalysisSnapshot;
+
   const map = {
     AAPL: ["MSFT", "NVDA", "AMZN"],
     TSLA: ["NVDA", "META", "AAPL"],
     PETR4: ["VALE3", "ITUB4", "BBDC4"],
     VALE3: ["PETR4", "ITUB4", "BBAS3"],
-    NVDA: ["AAPL", "MSFT", "TSLA"]
+    NVDA: ["AAPL", "MSFT", "TSLA"],
+    AMZN: ["AAPL", "META", "MSFT"],
+    META: ["AMZN", "GOOGL", "AAPL"]
   };
 
   const list = map[normalized] || ["AAPL", "TSLA", "NVDA"];
   const box = document.getElementById("suggestionsBox");
   if (!box) return;
 
+  const insightLine = snapshot
+    ? `${snapshot.trendLabel} • ${snapshot.setup} • ${snapshot.newsTone}`
+    : (currentLang === "en" ? "Run an analysis to unlock correlations and timing ideas." : "Rode uma análise para liberar correlações e ideias de timing.");
+
   box.innerHTML = `
     <div class="eng-section">
-      <h4>🧠 ${currentLang === "en" ? "You may also like:" : "Você também pode gostar:"}</h4>
+      <h4>🧠 ${currentLang === "en" ? "Smart panel" : "Painel inteligente"}</h4>
       <div class="eng-list">
         ${list.map((s) => `<button type="button" onclick="quickAnalyze('${s}')">${s}</button>`).join("")}
       </div>
+      <span class="eng-empty">${insightLine}</span>
     </div>
   `;
 }
@@ -3320,6 +3514,9 @@ function quickAnalyze(symbol) {
   handleSearch();
 }
 
+// =========================
+// MODO DIAGNÓSTICO — VALIDAÇÃO GERAL
+// =========================
 // =========================
 // MODO DIAGNÓSTICO — VALIDAÇÃO GERAL
 // =========================

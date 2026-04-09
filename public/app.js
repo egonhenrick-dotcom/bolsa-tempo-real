@@ -1495,93 +1495,149 @@ function scoreNewsTone(items = []) {
 }
 
 function buildAnalysisSnapshot(symbol, quote, candles, news = [], profile = {}) {
-  const toNumbers = (list = []) => list.map((value) => Number(value)).filter((value) => !Number.isNaN(value));
-  const closes = Array.isArray(candles?.c) ? toNumbers(candles.c) : [];
-  const opens = Array.isArray(candles?.o) ? toNumbers(candles.o) : [];
-  const highs = Array.isArray(candles?.h) ? toNumbers(candles.h) : [];
-  const lows = Array.isArray(candles?.l) ? toNumbers(candles.l) : [];
-  const volumes = Array.isArray(candles?.v) ? toNumbers(candles.v) : [];
+  const series = Array.isArray(candles?.c)
+    ? candles.c.map((value) => Number(value)).filter((value) => !Number.isNaN(value))
+    : [];
+  const validHighs = Array.isArray(candles?.h)
+    ? candles.h.map((value) => Number(value)).filter((value) => !Number.isNaN(value))
+    : [];
+  const validLows = Array.isArray(candles?.l)
+    ? candles.l.map((value) => Number(value)).filter((value) => !Number.isNaN(value))
+    : [];
+  const validOpens = Array.isArray(candles?.o)
+    ? candles.o.map((value) => Number(value)).filter((value) => !Number.isNaN(value))
+    : [];
+  const validVolumes = Array.isArray(candles?.v)
+    ? candles.v.map((value) => Number(value)).filter((value) => !Number.isNaN(value) && value >= 0)
+    : [];
 
-  const last = Number(quote?.c ?? closes[closes.length - 1] ?? 0);
-  const first = Number(closes[0] ?? quote?.pc ?? last);
+  const last = Number(quote?.c ?? series[series.length - 1] ?? 0);
+  const first = Number(series[0] ?? quote?.pc ?? last);
   const changePercent = Number(quote?.dp ?? ((last && first) ? (((last - first) / first) * 100) : 0));
-  const trendBySeries = closes.length >= 3 ? ((closes[closes.length - 1] - closes[0]) >= 0 ? "up" : "down") : (changePercent >= 0 ? "up" : "down");
+  const trendBySeries = series.length >= 3
+    ? ((series[series.length - 1] - series[0]) >= 0 ? "up" : "down")
+    : (changePercent >= 0 ? "up" : "down");
 
-  const amplitude = closes.length ? Math.max(...closes) - Math.min(...closes) : Math.abs(Number(quote?.h || 0) - Number(quote?.l || 0));
+  const amplitude = series.length
+    ? Math.max(...series) - Math.min(...series)
+    : Math.abs(Number(quote?.h || 0) - Number(quote?.l || 0));
   const volatilityPercent = last > 0 ? (amplitude / last) * 100 : 0;
-  const supportBase = lows.length ? Math.min(...lows.slice(-8)) : Number(quote?.l || last || 0);
-  const resistanceBase = highs.length ? Math.max(...highs.slice(-8)) : Number(quote?.h || last || 0);
+
+  const supportBase = validLows.length ? Math.min(...validLows.slice(-8)) : Number(quote?.l || last || 0);
+  const resistanceBase = validHighs.length ? Math.max(...validHighs.slice(-8)) : Number(quote?.h || last || 0);
   const distanceToSupport = last > 0 ? ((last - supportBase) / last) * 100 : 0;
   const distanceToResistance = last > 0 ? ((resistanceBase - last) / last) * 100 : 0;
 
-  const recentWindow = Math.max(3, Math.min(8, closes.length || 3));
-  const recentCandles = Array.from({ length: recentWindow }, (_, index) => {
-    const candleIndex = closes.length - recentWindow + index;
-    return {
-      open: Number(opens[candleIndex] ?? closes[candleIndex - 1] ?? closes[candleIndex] ?? last),
-      close: Number(closes[candleIndex] ?? last),
-      high: Number(highs[candleIndex] ?? closes[candleIndex] ?? last),
-      low: Number(lows[candleIndex] ?? closes[candleIndex] ?? last),
-      volume: Number(volumes[candleIndex] ?? 0)
-    };
-  }).filter((item) => Number.isFinite(item.open) && Number.isFinite(item.close));
-
-  const bullishCandles = recentCandles.filter((item) => item.close >= item.open).length;
-  const bearishCandles = recentCandles.filter((item) => item.close < item.open).length;
-  const bodyStrengthList = recentCandles.map((item) => {
-    const range = Math.max(0.000001, item.high - item.low);
-    return Math.abs(item.close - item.open) / range;
-  });
-  const averageBodyStrength = bodyStrengthList.length
-    ? bodyStrengthList.reduce((sum, value) => sum + value, 0) / bodyStrengthList.length
-    : 0;
-
-  const returns = closes.slice(1).map((value, index) => {
-    const prev = closes[index] || 0;
-    return prev > 0 ? ((value - prev) / prev) * 100 : 0;
-  });
-  const recentReturns = returns.slice(-recentWindow);
-  const momentumPercent = recentReturns.length
-    ? recentReturns.reduce((sum, value) => sum + value, 0)
-    : changePercent;
-
-  const latestVolume = Number(volumes[volumes.length - 1] ?? 0);
-  const avgRecentVolumeBase = volumes.slice(-Math.max(5, recentWindow));
-  const avgRecentVolume = avgRecentVolumeBase.length
-    ? avgRecentVolumeBase.reduce((sum, value) => sum + value, 0) / avgRecentVolumeBase.length
-    : latestVolume;
-  const volumeRatio = avgRecentVolume > 0 ? latestVolume / avgRecentVolume : 1;
-
-  const pressureBase =
-    (changePercent * 8) +
-    (momentumPercent * 5) +
-    ((bullishCandles - bearishCandles) * 9) +
-    (averageBodyStrength * 18) +
-    ((volumeRatio - 1) * 14);
-
-  const buyingScore = Math.max(0, Math.min(100, Math.round(50 + pressureBase)));
-  const sellingScore = Math.max(0, Math.min(100, Math.round(100 - buyingScore)));
-  const pulseScore = Math.max(0, Math.min(100, Math.round((Math.abs(changePercent) * 10) + (volatilityPercent * 4) + (Math.abs(momentumPercent) * 6) + (Math.max(0, volumeRatio - 1) * 15))));
-
   let strength = currentLang === "en" ? "Balanced" : "Equilibrada";
-  if (buyingScore >= 68 || sellingScore >= 68 || pulseScore >= 70) strength = currentLang === "en" ? "Strong" : "Forte";
-  else if (buyingScore >= 58 || sellingScore >= 58 || pulseScore >= 52) strength = currentLang === "en" ? "Moderate" : "Moderada";
+  if (Math.abs(changePercent) >= 3 || volatilityPercent >= 6) strength = currentLang === "en" ? "Strong" : "Forte";
+  else if (Math.abs(changePercent) >= 1.2 || volatilityPercent >= 3) strength = currentLang === "en" ? "Moderate" : "Moderada";
 
   let setup = currentLang === "en" ? "Neutral timing" : "Timing neutro";
   if (distanceToSupport <= 2 && trendBySeries === "up") setup = currentLang === "en" ? "Near support" : "Próximo do suporte";
   else if (distanceToResistance <= 2 && trendBySeries === "up") setup = currentLang === "en" ? "Testing resistance" : "Testando resistência";
   else if (distanceToSupport <= 2 && trendBySeries === "down") setup = currentLang === "en" ? "Watching reaction zone" : "Monitorar reação";
   else if (distanceToResistance <= 2 && trendBySeries === "down") setup = currentLang === "en" ? "Stretched move" : "Movimento esticado";
-  else if (pulseScore >= 70 && trendBySeries === "up") setup = currentLang === "en" ? "Momentum continuation" : "Continuação do momentum";
-  else if (pulseScore >= 70 && trendBySeries === "down") setup = currentLang === "en" ? "Fast risk zone" : "Zona de risco rápida";
 
   const trendLabel = trendBySeries === "up"
     ? (currentLang === "en" ? "Bullish bias" : "Viés de alta")
     : (currentLang === "en" ? "Bearish bias" : "Viés de baixa");
 
-  const signalLabel = buyingScore >= sellingScore
+  const signalLabel = changePercent >= 0
     ? (currentLang === "en" ? "Buyers in control" : "Compradores no controle")
     : (currentLang === "en" ? "Sellers pressing" : "Vendedores pressionando");
+
+  const recentSeries = series.slice(-6);
+  const recentOpens = validOpens.slice(-6);
+  const recentHighs = validHighs.slice(-6);
+  const recentLows = validLows.slice(-6);
+  const recentVolumes = validVolumes.slice(-6);
+
+  let candleBodyStrength = 0;
+  let bullishCandles = 0;
+  let bearishCandles = 0;
+
+  for (let i = 0; i < recentSeries.length; i += 1) {
+    const close = Number(recentSeries[i]);
+    const open = Number(recentOpens[i] ?? close);
+    const high = Number(recentHighs[i] ?? Math.max(open, close));
+    const low = Number(recentLows[i] ?? Math.min(open, close));
+    const range = Math.max(high - low, 0.0001);
+    const bodyRatio = Math.min(Math.abs(close - open) / range, 1);
+    candleBodyStrength += bodyRatio;
+    if (close >= open) bullishCandles += 1;
+    else bearishCandles += 1;
+  }
+
+  const bodyStrengthPercent = recentSeries.length
+    ? Math.min(100, Math.round((candleBodyStrength / recentSeries.length) * 100))
+    : 50;
+
+  const avgRecentVolume = recentVolumes.length
+    ? recentVolumes.reduce((sum, value) => sum + value, 0) / recentVolumes.length
+    : 0;
+  const maxRecentVolume = recentVolumes.length ? Math.max(...recentVolumes) : 0;
+  const volumeScore = maxRecentVolume > 0
+    ? Math.min(100, Math.round((avgRecentVolume / maxRecentVolume) * 100))
+    : 50;
+
+  const positiveMoveScore = Math.max(0, Math.min(100, 50 + (changePercent * 8)));
+  const negativeMoveScore = Math.max(0, Math.min(100, 50 + ((-changePercent) * 8)));
+  const trendBiasScore = trendBySeries === "up"
+    ? Math.min(100, 55 + bullishCandles * 7)
+    : Math.min(100, 55 + bearishCandles * 7);
+
+  const buyScoreRaw = (positiveMoveScore * 0.42) + (bodyStrengthPercent * 0.22) + (trendBiasScore * 0.22) + (volumeScore * 0.14);
+  const sellScoreRaw = (negativeMoveScore * 0.42) + (bodyStrengthPercent * 0.18) + ((100 - trendBiasScore) * 0.24) + (volumeScore * 0.16);
+
+  const buyScore = Math.max(0, Math.min(100, Math.round(buyScoreRaw)));
+  const sellScore = Math.max(0, Math.min(100, Math.round(sellScoreRaw)));
+  const hotScore = Math.max(0, Math.min(100, Math.round((Math.abs(changePercent) * 10) + (volatilityPercent * 4) + (bodyStrengthPercent * 0.35) + (volumeScore * 0.2))));
+
+  let score = 50;
+  score += trendBySeries === "up" ? 12 : -12;
+  score += Math.max(-18, Math.min(18, changePercent * 4));
+  score += bullishCandles * 3;
+  score -= bearishCandles * 2;
+  score += bodyStrengthPercent >= 60 ? 8 : bodyStrengthPercent >= 45 ? 3 : -3;
+  score += distanceToSupport <= 2.2 ? 8 : 0;
+  score -= distanceToResistance <= 1.4 ? 6 : 0;
+  score += volumeScore >= 60 ? 4 : 0;
+  score -= volatilityPercent >= 9 ? 6 : 0;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  let decision = currentLang === "en" ? "Wait" : "Esperar";
+  if (score >= 70) decision = currentLang === "en" ? "Good opportunity" : "Boa oportunidade";
+  else if (score <= 39) decision = currentLang === "en" ? "Avoid" : "Evitar";
+
+  let readingLine = currentLang === "en"
+    ? "Balanced market reading"
+    : "Leitura equilibrada do mercado";
+
+  if (score >= 78 && trendBySeries === "up") {
+    readingLine = currentLang === "en"
+      ? "Strong bullish continuation"
+      : "Continuação forte da alta";
+  } else if (score >= 66 && trendBySeries === "up") {
+    readingLine = currentLang === "en"
+      ? "Buyers gaining control"
+      : "Compradores ganhando controle";
+  } else if (score <= 35 && trendBySeries === "down") {
+    readingLine = currentLang === "en"
+      ? "Selling pressure dominating"
+      : "Pressão vendedora dominando";
+  } else if (score <= 45 && trendBySeries === "down") {
+    readingLine = currentLang === "en"
+      ? "Momentum weakening"
+      : "Momentum enfraquecendo";
+  } else if (distanceToResistance <= 1.4) {
+    readingLine = currentLang === "en"
+      ? "Price testing resistance"
+      : "Preço testando resistência";
+  } else if (distanceToSupport <= 2.2) {
+    readingLine = currentLang === "en"
+      ? "Price near support"
+      : "Preço perto do suporte";
+  }
 
   return {
     symbol: displaySymbol(symbol),
@@ -1596,14 +1652,14 @@ function buildAnalysisSnapshot(symbol, quote, candles, news = [], profile = {}) 
     support: Number(supportBase || 0),
     resistance: Number(resistanceBase || 0),
     volatilityPercent,
-    momentumPercent,
-    pulseScore,
-    buyingScore,
-    sellingScore,
-    bullishCandles,
-    bearishCandles,
-    averageBodyStrength,
-    volumeRatio,
+    buyScore,
+    sellScore,
+    hotScore,
+    score,
+    decision,
+    readingLine,
+    bodyStrengthPercent,
+    volumeScore,
     newsTone: scoreNewsTone(news),
     sourceLabel: getQuoteSourceLabel(quote),
     fetchedAt: Date.now()
@@ -1621,9 +1677,10 @@ function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
 
   panel.innerHTML = `
     <span class="analysis-hero-caption">${currentLang === "en" ? "Intelligent reading" : "Leitura inteligente"}</span>
+    <span class="analysis-hero-subcaption">${snapshot.readingLine}</span>
     <span class="analysis-hero-subcaption">${snapshot.trendLabel} • ${snapshot.strength} • ${snapshot.newsTone}</span>
+    <span class="analysis-hero-subcaption">${currentLang === "en" ? "Score" : "Score"}: ${snapshot.score}/100 • ${snapshot.decision}</span>
     <span class="analysis-hero-subcaption">${currentLang === "en" ? "Support" : "Suporte"}: ${formatPrice(snapshot.support)} • ${currentLang === "en" ? "Resistance" : "Resistência"}: ${formatPrice(snapshot.resistance)}</span>
-    <span class="analysis-hero-subcaption">${snapshot.setup}</span>
   `;
 }
 
@@ -1651,6 +1708,11 @@ function renderOverview(quote, snapshot = latestAnalysisSnapshot) {
         <span>${currentLang === "en" ? "Timing" : "Timing"}</span>
         <strong>${snapshot.strength}</strong>
         <small>${snapshot.newsTone}</small>
+      </div>
+      <div class="mini-card">
+        <span>${currentLang === "en" ? "Score" : "Score"}</span>
+        <strong>${snapshot.score}/100</strong>
+        <small>${snapshot.decision}</small>
       </div>
     `
     : `
@@ -3464,12 +3526,12 @@ function renderDynamicMarketLists() {
   const history = getAnalysisHistory();
   const recent = getRecentSearches();
 
-  const renderButtons = (items, emptyText) => items.length
+  const renderButtons = (items, emptyText, scoreKey = "changePercent") => items.length
     ? items.map((item) => {
         const symbol = typeof item === "string" ? item : item.symbol;
         const metric = typeof item === "string"
           ? ""
-          : `<small>${item.pulseScore != null ? `${Number(item.pulseScore)}/100` : formatSignedPercent(item.changePercent)}</small>`;
+          : `<small>${scoreKey === "changePercent" ? formatSignedPercent(item.changePercent) : `${Number(item?.[scoreKey] || 0)}/100`}</small>`;
         return `<button type="button" onclick="quickAnalyze('${symbol}')">${symbol}${metric}</button>`;
       }).join("")
     : `<span class="eng-empty">${emptyText}</span>`;
@@ -3491,20 +3553,14 @@ function renderDynamicMarketLists() {
     return;
   }
 
-  const hottest = [...history].sort((a, b) => Number(b.pulseScore || 0) - Number(a.pulseScore || 0)).slice(0, 3);
-  const bullish = history
-    .filter((item) => Number(item.buyingScore || 0) >= Number(item.sellingScore || 0))
-    .sort((a, b) => Number(b.buyingScore || 0) - Number(a.buyingScore || 0))
-    .slice(0, 3);
-  const bearish = history
-    .filter((item) => Number(item.sellingScore || 0) > Number(item.buyingScore || 0))
-    .sort((a, b) => Number(b.sellingScore || 0) - Number(a.sellingScore || 0))
-    .slice(0, 3);
+  const hottest = [...history].sort((a, b) => Number(b.hotScore || 0) - Number(a.hotScore || 0)).slice(0, 3);
+  const bullish = [...history].sort((a, b) => Number(b.buyScore || 0) - Number(a.buyScore || 0)).slice(0, 3);
+  const bearish = [...history].sort((a, b) => Number(b.sellScore || 0) - Number(a.sellScore || 0)).slice(0, 3);
   const latest = [...history].sort((a, b) => Number(b.fetchedAt || 0) - Number(a.fetchedAt || 0)).slice(0, 3);
 
-  const lead = hottest[0] || latest[0] || bullish[0] || bearish[0];
+  const lead = bullish[0] || hottest[0] || latest[0] || bearish[0];
   const leadText = lead
-    ? `${lead.symbol} • ${currentLang === "en" ? "Pulse" : "Pulso"} ${Number(lead.pulseScore || 0)}/100 • ${lead.trendLabel || ""}`.trim()
+    ? `${lead.symbol} • ${currentLang === "en" ? "Score" : "Score"} ${Number(lead.score || 0)}/100 • ${lead.decision || lead.trendLabel || ""}`.trim()
     : (currentLang === "en" ? "No active reading yet." : "Sem leitura ativa ainda.");
 
   box.innerHTML = `
@@ -3517,22 +3573,22 @@ function renderDynamicMarketLists() {
 
     <div class="eng-section">
       <h4>🔥 ${currentLang === "en" ? "Hot pulse" : "Pulso quente"}</h4>
-      <div class="eng-list">${renderButtons(hottest, currentLang === "en" ? "No signals yet." : "Sem sinais ainda.")}</div>
+      <div class="eng-list">${renderButtons(hottest, currentLang === "en" ? "No signals yet." : "Sem sinais ainda.", "hotScore")}</div>
     </div>
 
     <div class="eng-section">
       <h4>📈 ${currentLang === "en" ? "Buying strength" : "Força compradora"}</h4>
-      <div class="eng-list">${renderButtons(bullish, currentLang === "en" ? "Need more bullish reads." : "Precisa de mais leituras de alta.")}</div>
+      <div class="eng-list">${renderButtons(bullish, currentLang === "en" ? "Need more bullish reads." : "Precisa de mais leituras de alta.", "buyScore")}</div>
     </div>
 
     <div class="eng-section">
       <h4>📉 ${currentLang === "en" ? "Selling pressure" : "Pressão vendedora"}</h4>
-      <div class="eng-list">${renderButtons(bearish, currentLang === "en" ? "No bearish pressure in cache." : "Sem pressão de baixa no cache.")}</div>
+      <div class="eng-list">${renderButtons(bearish, currentLang === "en" ? "No bearish pressure in cache." : "Sem pressão de baixa no cache.", "sellScore")}</div>
     </div>
 
     <div class="eng-section">
       <h4>🕘 ${currentLang === "en" ? "Last readings" : "Últimas leituras"}</h4>
-      <div class="eng-list">${renderButtons(latest, currentLang === "en" ? "Start analyzing." : "Comece analisando.")}</div>
+      <div class="eng-list">${renderButtons(latest, currentLang === "en" ? "Start analyzing." : "Comece analisando.", "score")}</div>
     </div>
   `;
 

@@ -555,7 +555,7 @@ function updateAnalysisStageBadge(label, tone = "neutral") {
 
 function getQuoteSourceLabel(quote) {
   if (quote?.source === "yahoo") {
-    return currentLang === "en" ? "Yahoo backup" : "Backup Yahoo";
+    return "Yahoo Finance";
   }
 
   if (quote?.source === "finnhub") {
@@ -1495,35 +1495,91 @@ function scoreNewsTone(items = []) {
 }
 
 function buildAnalysisSnapshot(symbol, quote, candles, news = [], profile = {}) {
-  const series = Array.isArray(candles?.c) ? candles.c.map((value) => Number(value)).filter((value) => !Number.isNaN(value)) : [];
-  const validHighs = Array.isArray(candles?.h) ? candles.h.map((value) => Number(value)).filter((value) => !Number.isNaN(value)) : [];
-  const validLows = Array.isArray(candles?.l) ? candles.l.map((value) => Number(value)).filter((value) => !Number.isNaN(value)) : [];
-  const last = Number(quote?.c ?? series[series.length - 1] ?? 0);
-  const first = Number(series[0] ?? quote?.pc ?? last);
+  const toNumbers = (list = []) => list.map((value) => Number(value)).filter((value) => !Number.isNaN(value));
+  const closes = Array.isArray(candles?.c) ? toNumbers(candles.c) : [];
+  const opens = Array.isArray(candles?.o) ? toNumbers(candles.o) : [];
+  const highs = Array.isArray(candles?.h) ? toNumbers(candles.h) : [];
+  const lows = Array.isArray(candles?.l) ? toNumbers(candles.l) : [];
+  const volumes = Array.isArray(candles?.v) ? toNumbers(candles.v) : [];
+
+  const last = Number(quote?.c ?? closes[closes.length - 1] ?? 0);
+  const first = Number(closes[0] ?? quote?.pc ?? last);
   const changePercent = Number(quote?.dp ?? ((last && first) ? (((last - first) / first) * 100) : 0));
-  const trendBySeries = series.length >= 3 ? ((series[series.length - 1] - series[0]) >= 0 ? "up" : "down") : (changePercent >= 0 ? "up" : "down");
-  const amplitude = series.length ? Math.max(...series) - Math.min(...series) : Math.abs(Number(quote?.h || 0) - Number(quote?.l || 0));
+  const trendBySeries = closes.length >= 3 ? ((closes[closes.length - 1] - closes[0]) >= 0 ? "up" : "down") : (changePercent >= 0 ? "up" : "down");
+
+  const amplitude = closes.length ? Math.max(...closes) - Math.min(...closes) : Math.abs(Number(quote?.h || 0) - Number(quote?.l || 0));
   const volatilityPercent = last > 0 ? (amplitude / last) * 100 : 0;
-  const supportBase = validLows.length ? Math.min(...validLows.slice(-8)) : Number(quote?.l || last || 0);
-  const resistanceBase = validHighs.length ? Math.max(...validHighs.slice(-8)) : Number(quote?.h || last || 0);
+  const supportBase = lows.length ? Math.min(...lows.slice(-8)) : Number(quote?.l || last || 0);
+  const resistanceBase = highs.length ? Math.max(...highs.slice(-8)) : Number(quote?.h || last || 0);
   const distanceToSupport = last > 0 ? ((last - supportBase) / last) * 100 : 0;
   const distanceToResistance = last > 0 ? ((resistanceBase - last) / last) * 100 : 0;
 
+  const recentWindow = Math.max(3, Math.min(8, closes.length || 3));
+  const recentCandles = Array.from({ length: recentWindow }, (_, index) => {
+    const candleIndex = closes.length - recentWindow + index;
+    return {
+      open: Number(opens[candleIndex] ?? closes[candleIndex - 1] ?? closes[candleIndex] ?? last),
+      close: Number(closes[candleIndex] ?? last),
+      high: Number(highs[candleIndex] ?? closes[candleIndex] ?? last),
+      low: Number(lows[candleIndex] ?? closes[candleIndex] ?? last),
+      volume: Number(volumes[candleIndex] ?? 0)
+    };
+  }).filter((item) => Number.isFinite(item.open) && Number.isFinite(item.close));
+
+  const bullishCandles = recentCandles.filter((item) => item.close >= item.open).length;
+  const bearishCandles = recentCandles.filter((item) => item.close < item.open).length;
+  const bodyStrengthList = recentCandles.map((item) => {
+    const range = Math.max(0.000001, item.high - item.low);
+    return Math.abs(item.close - item.open) / range;
+  });
+  const averageBodyStrength = bodyStrengthList.length
+    ? bodyStrengthList.reduce((sum, value) => sum + value, 0) / bodyStrengthList.length
+    : 0;
+
+  const returns = closes.slice(1).map((value, index) => {
+    const prev = closes[index] || 0;
+    return prev > 0 ? ((value - prev) / prev) * 100 : 0;
+  });
+  const recentReturns = returns.slice(-recentWindow);
+  const momentumPercent = recentReturns.length
+    ? recentReturns.reduce((sum, value) => sum + value, 0)
+    : changePercent;
+
+  const latestVolume = Number(volumes[volumes.length - 1] ?? 0);
+  const avgRecentVolumeBase = volumes.slice(-Math.max(5, recentWindow));
+  const avgRecentVolume = avgRecentVolumeBase.length
+    ? avgRecentVolumeBase.reduce((sum, value) => sum + value, 0) / avgRecentVolumeBase.length
+    : latestVolume;
+  const volumeRatio = avgRecentVolume > 0 ? latestVolume / avgRecentVolume : 1;
+
+  const pressureBase =
+    (changePercent * 8) +
+    (momentumPercent * 5) +
+    ((bullishCandles - bearishCandles) * 9) +
+    (averageBodyStrength * 18) +
+    ((volumeRatio - 1) * 14);
+
+  const buyingScore = Math.max(0, Math.min(100, Math.round(50 + pressureBase)));
+  const sellingScore = Math.max(0, Math.min(100, Math.round(100 - buyingScore)));
+  const pulseScore = Math.max(0, Math.min(100, Math.round((Math.abs(changePercent) * 10) + (volatilityPercent * 4) + (Math.abs(momentumPercent) * 6) + (Math.max(0, volumeRatio - 1) * 15))));
+
   let strength = currentLang === "en" ? "Balanced" : "Equilibrada";
-  if (Math.abs(changePercent) >= 3 || volatilityPercent >= 6) strength = currentLang === "en" ? "Strong" : "Forte";
-  else if (Math.abs(changePercent) >= 1.2 || volatilityPercent >= 3) strength = currentLang === "en" ? "Moderate" : "Moderada";
+  if (buyingScore >= 68 || sellingScore >= 68 || pulseScore >= 70) strength = currentLang === "en" ? "Strong" : "Forte";
+  else if (buyingScore >= 58 || sellingScore >= 58 || pulseScore >= 52) strength = currentLang === "en" ? "Moderate" : "Moderada";
 
   let setup = currentLang === "en" ? "Neutral timing" : "Timing neutro";
   if (distanceToSupport <= 2 && trendBySeries === "up") setup = currentLang === "en" ? "Near support" : "Próximo do suporte";
   else if (distanceToResistance <= 2 && trendBySeries === "up") setup = currentLang === "en" ? "Testing resistance" : "Testando resistência";
   else if (distanceToSupport <= 2 && trendBySeries === "down") setup = currentLang === "en" ? "Watching reaction zone" : "Monitorar reação";
   else if (distanceToResistance <= 2 && trendBySeries === "down") setup = currentLang === "en" ? "Stretched move" : "Movimento esticado";
+  else if (pulseScore >= 70 && trendBySeries === "up") setup = currentLang === "en" ? "Momentum continuation" : "Continuação do momentum";
+  else if (pulseScore >= 70 && trendBySeries === "down") setup = currentLang === "en" ? "Fast risk zone" : "Zona de risco rápida";
 
   const trendLabel = trendBySeries === "up"
     ? (currentLang === "en" ? "Bullish bias" : "Viés de alta")
     : (currentLang === "en" ? "Bearish bias" : "Viés de baixa");
 
-  const signalLabel = changePercent >= 0
+  const signalLabel = buyingScore >= sellingScore
     ? (currentLang === "en" ? "Buyers in control" : "Compradores no controle")
     : (currentLang === "en" ? "Sellers pressing" : "Vendedores pressionando");
 
@@ -1540,6 +1596,14 @@ function buildAnalysisSnapshot(symbol, quote, candles, news = [], profile = {}) 
     support: Number(supportBase || 0),
     resistance: Number(resistanceBase || 0),
     volatilityPercent,
+    momentumPercent,
+    pulseScore,
+    buyingScore,
+    sellingScore,
+    bullishCandles,
+    bearishCandles,
+    averageBodyStrength,
+    volumeRatio,
     newsTone: scoreNewsTone(news),
     sourceLabel: getQuoteSourceLabel(quote),
     fetchedAt: Date.now()
@@ -3403,8 +3467,10 @@ function renderDynamicMarketLists() {
   const renderButtons = (items, emptyText) => items.length
     ? items.map((item) => {
         const symbol = typeof item === "string" ? item : item.symbol;
-        const change = typeof item === "string" ? "" : `<small>${formatSignedPercent(item.changePercent)}</small>`;
-        return `<button type="button" onclick="quickAnalyze('${symbol}')">${symbol}${change}</button>`;
+        const metric = typeof item === "string"
+          ? ""
+          : `<small>${item.pulseScore != null ? `${Number(item.pulseScore)}/100` : formatSignedPercent(item.changePercent)}</small>`;
+        return `<button type="button" onclick="quickAnalyze('${symbol}')">${symbol}${metric}</button>`;
       }).join("")
     : `<span class="eng-empty">${emptyText}</span>`;
 
@@ -3425,14 +3491,20 @@ function renderDynamicMarketLists() {
     return;
   }
 
-  const hottest = [...history].sort((a, b) => Math.abs(b.changePercent || 0) - Math.abs(a.changePercent || 0)).slice(0, 3);
-  const bullish = history.filter((item) => Number(item.changePercent) >= 0).sort((a, b) => Number(b.changePercent) - Number(a.changePercent)).slice(0, 3);
-  const bearish = history.filter((item) => Number(item.changePercent) < 0).sort((a, b) => Number(a.changePercent) - Number(b.changePercent)).slice(0, 3);
+  const hottest = [...history].sort((a, b) => Number(b.pulseScore || 0) - Number(a.pulseScore || 0)).slice(0, 3);
+  const bullish = history
+    .filter((item) => Number(item.buyingScore || 0) >= Number(item.sellingScore || 0))
+    .sort((a, b) => Number(b.buyingScore || 0) - Number(a.buyingScore || 0))
+    .slice(0, 3);
+  const bearish = history
+    .filter((item) => Number(item.sellingScore || 0) > Number(item.buyingScore || 0))
+    .sort((a, b) => Number(b.sellingScore || 0) - Number(a.sellingScore || 0))
+    .slice(0, 3);
   const latest = [...history].sort((a, b) => Number(b.fetchedAt || 0) - Number(a.fetchedAt || 0)).slice(0, 3);
 
   const lead = hottest[0] || latest[0] || bullish[0] || bearish[0];
   const leadText = lead
-    ? `${lead.symbol} ${formatSignedPercent(lead.changePercent)} • ${lead.trendLabel || ""}`.trim()
+    ? `${lead.symbol} • ${currentLang === "en" ? "Pulse" : "Pulso"} ${Number(lead.pulseScore || 0)}/100 • ${lead.trendLabel || ""}`.trim()
     : (currentLang === "en" ? "No active reading yet." : "Sem leitura ativa ainda.");
 
   box.innerHTML = `

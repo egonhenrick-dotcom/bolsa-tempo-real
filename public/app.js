@@ -384,8 +384,8 @@ function getTimeframeQuery(timeframe = currentTimeframe) {
   return params.toString();
 }
 
-async function fetchCandlesByTimeframe(symbol, authenticated = true) {
-  const url = `/api/candles/${encodeURIComponent(symbol)}?${getTimeframeQuery()}`;
+async function fetchCandlesByTimeframe(symbol, authenticated = true, timeframe = currentTimeframe) {
+  const url = `/api/candles/${encodeURIComponent(symbol)}?${getTimeframeQuery(timeframe)}`;
   return authenticated ? fetchAuthJSON(url) : fetchJSON(url);
 }
 
@@ -1885,7 +1885,7 @@ async function handleSearch(silentRefresh = false) {
     const results = await Promise.allSettled([
       fetchAuthJSON(`/api/quote/${symbol}`),
       fetchAuthJSON(`/api/profile/${symbol}`),
-      fetchCandlesByTimeframe(symbol, true),
+      fetchCandlesByTimeframe(symbol, true, currentTimeframe),
       fetchAuthJSON(`/api/news/${symbol}`)
     ]);
 
@@ -1919,9 +1919,9 @@ async function handleSearch(silentRefresh = false) {
         });
         await showSmartUpgrade("compare", { baseSymbol: symbol, compareSymbol });
         setStatus(t("compareOnlyPro"));
-        if (chartLabel) chartLabel.textContent = t("last7days");
+        if (chartLabel) chartLabel.textContent = getTimeframeLabel(currentTimeframe);
       } else {
-        const compareData = await fetchCandlesByTimeframe(compareSymbol, true);
+        const compareData = await fetchCandlesByTimeframe(compareSymbol, true, currentTimeframe);
         compareCandles = compareData?.s === "ok" ? compareData : null;
       }
     }

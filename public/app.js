@@ -1254,8 +1254,87 @@ function buildCompareLineData(candles) {
   return data;
 }
 
+
+function getTradingViewInterval(timeframe = currentTimeframe) {
+  const intervalMap = {
+    "1D": "5",
+    "5D": "30",
+    "1M": "60",
+    "3M": "D",
+    "1Y": "W"
+  };
+
+  return intervalMap[timeframe] || "30";
+}
+
+function getTradingViewSymbol(rawSymbol = "") {
+  const normalized = normalizeSymbol(rawSymbol).replace(".SA", "");
+  if (!normalized) return "AAPL";
+
+  if (/^[A-Z]{4}\d$/.test(normalized)) {
+    return `BMFBOVESPA:${normalized}`;
+  }
+
+  return normalized;
+}
+
+function loadTradingViewChart(symbol = currentSymbol || symbolInput?.value || "AAPL") {
+  if (!chart || typeof window.TradingView === "undefined") return false;
+
+  if (tradingChartResizeObserver) {
+    tradingChartResizeObserver.disconnect();
+    tradingChartResizeObserver = null;
+  }
+
+  if (tradingChart) {
+    try {
+      tradingChart.remove();
+    } catch (e) {}
+    tradingChart = null;
+  }
+
+  chart.innerHTML = '<div id="tv-chart" class="tv-chart-container" style="width:100%;height:500px;"></div>';
+
+  const container = document.getElementById("tv-chart");
+  if (!container) return false;
+
+  try {
+    new TradingView.widget({
+      autosize: true,
+      symbol: getTradingViewSymbol(symbol),
+      interval: getTradingViewInterval(currentTimeframe),
+      timezone: "America/Sao_Paulo",
+      theme: document.body.classList.contains("light-theme") ? "light" : "dark",
+      style: "1",
+      locale: currentLang === "en" ? "en" : "pt_BR",
+      toolbar_bg: document.body.classList.contains("light-theme") ? "#ffffff" : "#0f172a",
+      enable_publishing: false,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      save_image: false,
+      withdateranges: true,
+      details: false,
+      studies: [
+        "RSI@tv-basicstudies",
+        "MACD@tv-basicstudies"
+      ],
+      container_id: "tv-chart"
+    });
+    return true;
+  } catch (error) {
+    console.error("Falha ao carregar TradingView:", error.message);
+    return false;
+  }
+}
+
 function drawChart(candles, compareCandles = null) {
   if (!chart) return;
+
+  const shouldUseTradingView = !compareCandles && Array.isArray(candles?.c) && candles.c.length >= 2;
+  if (shouldUseTradingView) {
+    const loaded = loadTradingViewChart(currentSymbol || symbolInput?.value || "AAPL");
+    if (loaded) return;
+  }
 
   if (tradingChartResizeObserver) {
     tradingChartResizeObserver.disconnect();

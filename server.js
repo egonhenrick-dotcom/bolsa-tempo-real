@@ -119,11 +119,11 @@ app.use(express.static(publicDir, {
     }
 
     if (filePath.endsWith(".js") || filePath.endsWith(".css")) {
-      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
       return;
     }
 
-    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("Cache-Control", "public, max-age=600, must-revalidate");
   }
 }));
 

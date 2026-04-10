@@ -119,7 +119,7 @@ app.use(express.static(publicDir, {
     }
 
     if (filePath.endsWith(".js") || filePath.endsWith(".css")) {
-      res.setHeader("Cache-Control", "public, max-age=604800");
+      res.setHeader("Cache-Control", "no-store");
       return;
     }
 

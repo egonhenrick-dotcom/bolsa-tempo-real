@@ -33,6 +33,13 @@ let networkBannerEl = null;
 let latestAnalysisSnapshot = null;
 let latestRenderedQuote = null;
 let latestRenderedProfile = null;
+let isAnalysisPaused = false;
+let tradingViewState = { symbol: "", interval: "", theme: "", locale: "", mode: "" };
+let lastRenderedCompareSymbol = "";
+let lastRenderedBaseSymbol = "";
+let lastRenderedTimeframe = "";
+let lastChartInteractionAt = 0;
+const CHART_INTERACTION_GUARD_MS = 12000;
 const AUTH_SYNC_EVENT_KEY = "bolsa-auth-sync-event";
 
 const translations = {
@@ -132,7 +139,11 @@ const translations = {
     chartTypeCandle: "Candle",
     chartTypeCompare: "Compare",
     chartHoverLabel: "Hover reading",
-    chartLiveLabel: "Live chart"
+    chartLiveLabel: "Live chart",
+    pauseAnalysis: "Pause analysis",
+    resumeAnalysis: "Resume analysis",
+    analysisPaused: "Analysis paused",
+    analysisLive: "Analysis live"
   },
   pt: {
     login: "Entrar / Criar conta",
@@ -230,7 +241,11 @@ const translations = {
     chartTypeCandle: "Candle",
     chartTypeCompare: "Comparativo",
     chartHoverLabel: "Leitura no cursor",
-    chartLiveLabel: "Gráfico ao vivo"
+    chartLiveLabel: "Gráfico ao vivo",
+    pauseAnalysis: "Pausar análise",
+    resumeAnalysis: "Retomar análise",
+    analysisPaused: "Análise pausada",
+    analysisLive: "Análise ao vivo"
   }
 };
 
@@ -267,6 +282,8 @@ function startAutoRefresh(symbol) {
       if (document.hidden) return;
       if (isSearchingNow) return;
       if (isAutoRefreshing) return;
+      if (isAnalysisPaused) return;
+      if (isChartInteractionGuardActive()) return;
 
       if (window.__refreshLock) return;
       window.__refreshLock = true;
@@ -459,6 +476,7 @@ function ensureTimeframeControls() {
 
   setActiveTimeframeButton();
   updateChartHeader(normalizeSymbol(compareInput?.value || ""));
+  ensureAnalysisControlButton();
 }
 
 function setChartLoadingState(loading) {
@@ -732,11 +750,17 @@ function clearAnalysisUI() {
   latestAnalysisSnapshot = null;
   latestRenderedQuote = null;
   latestRenderedProfile = null;
+  isAnalysisPaused = false;
+  lastRenderedCompareSymbol = "";
+  lastRenderedBaseSymbol = "";
+  lastRenderedTimeframe = "";
+  resetTradingViewState();
   resetSmartPremiumPanel();
   updateAnalysisStageBadge(currentLang === "en" ? "Waiting for asset" : "Aguardando ativo", "neutral");
   updateChartHeader("");
   setStatus(t("typeTicker"));
   syncActiveMarketButtons();
+  updateAnalysisControlButton();
 }
 
 function getAccessToken() {
@@ -1226,6 +1250,7 @@ function renderFavorites() {
   });
 
   syncActiveMarketButtons();
+  updateAnalysisControlButton();
 }
 
 async function syncFavoritesFromServer() {
@@ -1337,6 +1362,157 @@ function buildCompareLineData(candles) {
 }
 
 
+function getChartThemeMode() {
+  return document.body.classList.contains("light-theme") ? "light" : "dark";
+}
+
+function getChartLocale() {
+  return currentLang === "en" ? "en" : "pt_BR";
+}
+
+function getAnalysisControlButtonLabel() {
+  return isAnalysisPaused ? `▶️ ${t("resumeAnalysis")}` : `⏸️ ${t("pauseAnalysis")}`;
+}
+
+function updateAnalysisControlButton() {
+  const btn = document.getElementById("analysisPauseBtn");
+  if (!btn) return;
+  btn.textContent = getAnalysisControlButtonLabel();
+  btn.dataset.state = isAnalysisPaused ? "paused" : "live";
+  btn.classList.toggle("is-paused", isAnalysisPaused);
+  btn.title = isAnalysisPaused ? t("analysisPaused") : t("analysisLive");
+}
+
+function ensureAnalysisControlButton() {
+  if (!chartCard) return null;
+  const header = chartCard.querySelector(".chart-header");
+  if (!header) return null;
+
+  let btn = document.getElementById("analysisPauseBtn");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "analysisPauseBtn";
+    btn.type = "button";
+    btn.className = "neutral-btn analysis-pause-btn";
+    btn.style.minHeight = "auto";
+    btn.style.padding = "8px 12px";
+    btn.style.borderRadius = "999px";
+    btn.style.marginLeft = "8px";
+    btn.onclick = () => {
+      isAnalysisPaused = !isAnalysisPaused;
+      updateAnalysisControlButton();
+      if (isAnalysisPaused) {
+        setStatus(`⏸️ ${t("analysisPaused")}`);
+      } else if (currentSymbol) {
+        setStatus(`${t("updatedFor")} ${displaySymbol(currentSymbol)} • ${t("analysisLive")}.`);
+      }
+    };
+    header.appendChild(btn);
+  }
+
+  updateAnalysisControlButton();
+  return btn;
+}
+
+function hasTradingViewVisual() {
+  const container = document.getElementById("tv-chart");
+  if (!container) return false;
+  bindChartInteractionGuards(container);
+  return !!container.querySelector("iframe, div");
+}
+
+function resetTradingViewState() {
+  tradingViewState = { symbol: "", interval: "", theme: "", locale: "", mode: "" };
+}
+
+function shouldReloadTradingView(symbol) {
+  const nextState = {
+    symbol: getTradingViewSymbol(symbol),
+    interval: getTradingViewInterval(currentTimeframe),
+    theme: getChartThemeMode(),
+    locale: getChartLocale(),
+    mode: "tradingview"
+  };
+
+  const changed = Object.keys(nextState).some((key) => nextState[key] !== tradingViewState[key]);
+  return { changed, nextState };
+}
+
+
+function markChartInteraction() {
+  lastChartInteractionAt = Date.now();
+}
+
+function isChartInteractionGuardActive() {
+  return (Date.now() - lastChartInteractionAt) < CHART_INTERACTION_GUARD_MS;
+}
+
+function bindChartInteractionGuards(target) {
+  if (!target || target.__chartInteractionGuardBound) return;
+  const touch = () => markChartInteraction();
+  ["mouseenter", "mousemove", "mousedown", "wheel", "touchstart", "touchmove"].forEach((eventName) => {
+    target.addEventListener(eventName, touch, { passive: true });
+  });
+  target.__chartInteractionGuardBound = true;
+}
+
+function shouldRefreshChartOnSearch({ silentRefresh = false, compareModeActive = false, compareSymbol = "", baseSymbol = "" } = {}) {
+  const normalizedBase = normalizeSymbol(baseSymbol || currentSymbol || symbolInput?.value || "");
+  const normalizedCompare = compareModeActive ? normalizeSymbol(compareSymbol) : "";
+  const compareChanged = lastRenderedCompareSymbol !== normalizedCompare;
+  const baseChanged = lastRenderedBaseSymbol !== normalizedBase;
+  const timeframeChanged = lastRenderedTimeframe !== currentTimeframe;
+  const nextMode = compareModeActive ? "compare" : "tradingview";
+  const modeChanged = tradingViewState.mode !== nextMode;
+
+  if (compareModeActive) {
+    const shouldReloadCompare = baseChanged || timeframeChanged || compareChanged || modeChanged || !tradingChart;
+    return {
+      reload: shouldReloadCompare,
+      compareKey: normalizedCompare,
+      baseKey: normalizedBase,
+      timeframeKey: currentTimeframe,
+      mode: nextMode,
+      forceReload: shouldReloadCompare
+    };
+  }
+
+  const { changed } = shouldReloadTradingView(normalizedBase || currentSymbol || symbolInput?.value || "AAPL");
+  const missingVisual = !hasTradingViewVisual();
+  const structuralChange = baseChanged || timeframeChanged || compareChanged || modeChanged || changed || missingVisual;
+
+  if (silentRefresh) {
+    if (isAnalysisPaused || isChartInteractionGuardActive()) {
+      return {
+        reload: false,
+        compareKey: "",
+        baseKey: normalizedBase,
+        timeframeKey: currentTimeframe,
+        mode: nextMode,
+        forceReload: false
+      };
+    }
+
+    return {
+      reload: structuralChange,
+      compareKey: "",
+      baseKey: normalizedBase,
+      timeframeKey: currentTimeframe,
+      mode: nextMode,
+      forceReload: false
+    };
+  }
+
+  return {
+    reload: structuralChange,
+    compareKey: "",
+    baseKey: normalizedBase,
+    timeframeKey: currentTimeframe,
+    mode: nextMode,
+    forceReload: false
+  };
+}
+
 function getTradingViewInterval(timeframe = currentTimeframe) {
   const intervalMap = {
     "1D": "5",
@@ -1360,36 +1536,48 @@ function getTradingViewSymbol(rawSymbol = "") {
   return normalized;
 }
 
-function loadTradingViewChart(symbol = currentSymbol || symbolInput?.value || "AAPL") {
+function loadTradingViewChart(symbol = currentSymbol || symbolInput?.value || "AAPL", options = {}) {
   if (!chart || typeof window.TradingView === "undefined") return false;
+
+  ensureAnalysisControlButton();
+
+  const { changed, nextState } = shouldReloadTradingView(symbol);
+  const forceReload = !!options.forceReload;
+  const hasVisual = hasTradingViewVisual();
+
+  if (!forceReload && !changed && hasVisual) {
+    tradingViewState = nextState;
+    return true;
+  }
 
   if (tradingChartResizeObserver) {
     tradingChartResizeObserver.disconnect();
     tradingChartResizeObserver = null;
   }
 
-  if (tradingChart) {
+  if (tradingChart && typeof tradingChart.remove === "function") {
     try {
       tradingChart.remove();
     } catch (e) {}
-    tradingChart = null;
   }
+  tradingChart = null;
 
-  chart.innerHTML = '<div id="tv-chart" class="tv-chart-container" style="width:100%;height:500px;"></div>';
+  chart.innerHTML = '<div id="tv-chart" class="tv-chart-container" style="width:100%;height:500px;"></div>';;
 
   const container = document.getElementById("tv-chart");
   if (!container) return false;
+  bindChartInteractionGuards(container);
 
   try {
-    new TradingView.widget({
+    tradingChart = new TradingView.widget({
       autosize: true,
-      symbol: getTradingViewSymbol(symbol),
-      interval: getTradingViewInterval(currentTimeframe),
+      symbol: nextState.symbol,
+      interval: nextState.interval,
       timezone: "America/Sao_Paulo",
-      theme: document.body.classList.contains("light-theme") ? "light" : "dark",
+      theme: nextState.theme,
       style: "1",
-      locale: currentLang === "en" ? "en" : "pt_BR",
-      toolbar_bg: document.body.classList.contains("light-theme") ? "#ffffff" : "#0f172a",
+      locale: nextState.locale,
+      toolbar_bg: nextState.theme === "light" ? "#ffffff" : "#0f172a",
       enable_publishing: false,
       hide_top_toolbar: false,
       hide_legend: false,
@@ -1405,6 +1593,8 @@ function loadTradingViewChart(symbol = currentSymbol || symbolInput?.value || "A
       ],
       container_id: "tv-chart"
     });
+
+    tradingViewState = nextState;
     return true;
   } catch (error) {
     console.error("Falha ao carregar TradingView:", error.message);
@@ -1412,12 +1602,12 @@ function loadTradingViewChart(symbol = currentSymbol || symbolInput?.value || "A
   }
 }
 
-function drawChart(candles, compareCandles = null) {
+function drawChart(candles, compareCandles = null, options = {}) {
   if (!chart) return;
 
   const shouldUseTradingView = !compareCandles && Array.isArray(candles?.c) && candles.c.length >= 2;
   if (shouldUseTradingView) {
-    const loaded = loadTradingViewChart(currentSymbol || symbolInput?.value || "AAPL");
+    const loaded = loadTradingViewChart(currentSymbol || symbolInput?.value || "AAPL", options);
     if (loaded) return;
   }
 
@@ -1434,6 +1624,7 @@ function drawChart(candles, compareCandles = null) {
   }
 
   chart.innerHTML = "";
+  resetTradingViewState();
 
   const candleData = buildCandlestickData(candles);
 
@@ -1451,6 +1642,7 @@ function drawChart(candles, compareCandles = null) {
   const chartContainer = document.createElement("div");
   chartContainer.className = "tv-chart-container";
   chart.appendChild(chartContainer);
+  bindChartInteractionGuards(chartContainer);
 
   requestAnimationFrame(() => {
     if (!chartContainer.parentNode) return;
@@ -1548,6 +1740,7 @@ function drawChart(candles, compareCandles = null) {
 
         if ([open, high, low, close].some((value) => !Number.isFinite(value))) {
           toolTip.style.display = "none";
+          syncInstitutionalHover(null);
           return;
         }
 
@@ -2167,7 +2360,9 @@ async function handleSearch(silentRefresh = false) {
 
   const requestId = ++activeSearchRequestId;
   setSearchLoadingState(true);
-  setChartLoadingState(true);
+  if (!silentRefresh) {
+    setChartLoadingState(true);
+  }
 
   if (!silentRefresh) {
     updateAnalysisStageBadge(`${displaySymbol(symbol)} • ${currentLang === "en" ? "Analyzing" : "Analisando"}`, "info");
@@ -2233,7 +2428,22 @@ async function handleSearch(silentRefresh = false) {
     if (requestId !== activeSearchRequestId) return;
 
     const candleSeries = Array.isArray(candles?.c) ? candles.c : [];
-    drawChart(candles, compareCandles);
+    const compareModeActive = !!(compareCandles?.c?.length);
+    const chartRefreshPlan = shouldRefreshChartOnSearch({
+      silentRefresh,
+      compareModeActive,
+      compareSymbol,
+      baseSymbol: symbol
+    });
+
+    if (chartRefreshPlan.reload) {
+      drawChart(candles, compareCandles, { forceReload: chartRefreshPlan.forceReload === true });
+    }
+
+    lastRenderedCompareSymbol = chartRefreshPlan.compareKey;
+    lastRenderedBaseSymbol = chartRefreshPlan.baseKey || symbol;
+    lastRenderedTimeframe = chartRefreshPlan.timeframeKey || currentTimeframe;
+    tradingViewState.mode = chartRefreshPlan.mode || tradingViewState.mode;
 
     if (candleSeries.length < 2) {
       setStatus(`⚠️ ${displaySymbol(symbol)} sem dados suficientes para o gráfico em ${getTimeframeLabel(currentTimeframe)}.`);
@@ -2249,6 +2459,7 @@ async function handleSearch(silentRefresh = false) {
     renderOverview(quote, analysisSnapshot);
     renderSmartPremiumPanel(analysisSnapshot);
     afterSuccessfulAnalysis(symbol);
+    ensureAnalysisControlButton();
     syncActiveMarketButtons();
 
     if (newsSymbol) newsSymbol.textContent = displaySymbol(symbol);
@@ -2268,7 +2479,7 @@ async function handleSearch(silentRefresh = false) {
       const baseStatus = getFriendlyAnalysisStatus(symbol, quote, candles);
       const tone = quote?.error === "QUOTE_UNAVAILABLE" ? "warning" : "success";
       updateAnalysisStageBadge(`${displaySymbol(symbol)} • ${getQuoteSourceLabel(quote)}`, tone);
-      setStatus(`${baseStatus} ${t("remainingToday")}: ${remaining}`);
+      setStatus(isAnalysisPaused ? `⏸️ ${t("analysisPaused")} • ${baseStatus} ${t("remainingToday")}: ${remaining}` : `${baseStatus} ${t("remainingToday")}: ${remaining}`);
     }
 
     startAutoRefresh(symbol);
@@ -3119,6 +3330,7 @@ async function init() {
     } catch {}
   }, 120000);
   syncActiveMarketButtons();
+  updateAnalysisControlButton();
 }
 
 // =========================
@@ -4109,3 +4321,5 @@ async function fetchAdminMine() {
     return null;
   }
 }
+
+// === BLINDAGEM FINAL APLICADA (TIMEFRAME + SINCRONISMO) ===

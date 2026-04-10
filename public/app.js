@@ -31,6 +31,8 @@ let backendHealthTimer = null;
 let checkoutInFlight = false;
 let networkBannerEl = null;
 let latestAnalysisSnapshot = null;
+let latestRenderedQuote = null;
+let latestRenderedProfile = null;
 const AUTH_SYNC_EVENT_KEY = "bolsa-auth-sync-event";
 
 const translations = {
@@ -126,7 +128,11 @@ const translations = {
     suggestionsEmpty: "No matching assets found.",
     searchingLabel: "Searching assets...",
     suggestionPick: "Choose an asset from the list",
-    autocompleteTopMatch: "Top match"
+    autocompleteTopMatch: "Top match",
+    chartTypeCandle: "Candle",
+    chartTypeCompare: "Compare",
+    chartHoverLabel: "Hover reading",
+    chartLiveLabel: "Live chart"
   },
   pt: {
     login: "Entrar / Criar conta",
@@ -220,7 +226,11 @@ const translations = {
     suggestionsEmpty: "Nenhum ativo encontrado.",
     searchingLabel: "Buscando ativos...",
     suggestionPick: "Escolha um ativo da lista",
-    autocompleteTopMatch: "Melhor resultado"
+    autocompleteTopMatch: "Melhor resultado",
+    chartTypeCandle: "Candle",
+    chartTypeCompare: "Comparativo",
+    chartHoverLabel: "Leitura no cursor",
+    chartLiveLabel: "Gráfico ao vivo"
   }
 };
 
@@ -467,6 +477,76 @@ function setChartLoadingState(loading) {
   chart.style.opacity = "1";
 }
 
+
+function applyQuoteCardValues(quote = {}) {
+  if (currentPrice) currentPrice.textContent = formatPrice(quote?.c);
+  if (changePercent) {
+    const numericChange = Number(quote?.dp);
+    changePercent.textContent = Number.isFinite(numericChange) ? `${numericChange.toFixed(2)}%` : "-";
+  }
+  if (openPrice) openPrice.textContent = formatPrice(quote?.o);
+  if (highPrice) highPrice.textContent = formatPrice(quote?.h);
+  if (lowPrice) lowPrice.textContent = formatPrice(quote?.l);
+  if (prevClose) prevClose.textContent = formatPrice(quote?.pc);
+}
+
+function buildHoverQuote(baseQuote = {}, point = {}) {
+  const close = Number(point?.close);
+  const open = Number(point?.open);
+  const high = Number(point?.high);
+  const low = Number(point?.low);
+  const prevCloseValue = Number(baseQuote?.pc);
+
+  const hasClose = Number.isFinite(close);
+  const hasPrevClose = Number.isFinite(prevCloseValue) && prevCloseValue !== 0;
+
+  const absoluteChange = hasClose && hasPrevClose ? Number((close - prevCloseValue).toFixed(2)) : baseQuote?.d ?? null;
+  const percentChange = hasClose && hasPrevClose
+    ? Number((((close - prevCloseValue) / prevCloseValue) * 100).toFixed(2))
+    : baseQuote?.dp ?? null;
+
+  return {
+    ...baseQuote,
+    c: hasClose ? close : baseQuote?.c ?? null,
+    o: Number.isFinite(open) ? open : baseQuote?.o ?? null,
+    h: Number.isFinite(high) ? high : baseQuote?.h ?? null,
+    l: Number.isFinite(low) ? low : baseQuote?.l ?? null,
+    d: absoluteChange,
+    dp: percentChange
+  };
+}
+
+function cloneSnapshotWithHover(snapshot = latestAnalysisSnapshot, hoverQuote = latestRenderedQuote) {
+  if (!snapshot) return null;
+  return {
+    ...snapshot,
+    price: hoverQuote?.c ?? snapshot.price,
+    sourceLabel: `${t("chartHoverLabel")} • ${snapshot.sourceLabel || ""}`.trim()
+  };
+}
+
+function syncInstitutionalHover(point = null) {
+  if (!latestRenderedQuote) return;
+
+  if (!point) {
+    applyQuoteCardValues(latestRenderedQuote);
+    if (latestAnalysisSnapshot) {
+      renderOverview(latestRenderedQuote, latestAnalysisSnapshot);
+      renderSmartPremiumPanel(latestAnalysisSnapshot);
+    }
+    return;
+  }
+
+  const hoverQuote = buildHoverQuote(latestRenderedQuote, point);
+  applyQuoteCardValues(hoverQuote);
+
+  const hoverSnapshot = cloneSnapshotWithHover(latestAnalysisSnapshot, hoverQuote);
+  if (hoverSnapshot) {
+    renderOverview(hoverQuote, hoverSnapshot);
+    renderSmartPremiumPanel(hoverSnapshot);
+  }
+}
+
 function formatPrice(value) {
   if (value == null || Number.isNaN(Number(value))) return "-";
   return Number(value).toFixed(2);
@@ -650,6 +730,8 @@ function clearAnalysisUI() {
   if (analysisHeroPrice) analysisHeroPrice.textContent = "--";
   if (analysisHeroMeta) analysisHeroMeta.textContent = currentLang === "en" ? "Waiting for analysis" : "Aguardando análise";
   latestAnalysisSnapshot = null;
+  latestRenderedQuote = null;
+  latestRenderedProfile = null;
   resetSmartPremiumPanel();
   updateAnalysisStageBadge(currentLang === "en" ? "Waiting for asset" : "Aguardando ativo", "neutral");
   updateChartHeader("");
@@ -1314,6 +1396,9 @@ function loadTradingViewChart(symbol = currentSymbol || symbolInput?.value || "A
       save_image: false,
       withdateranges: true,
       details: false,
+      calendar: false,
+      hide_side_toolbar: false,
+      allow_symbol_change: false,
       studies: [
         "RSI@tv-basicstudies",
         "MACD@tv-basicstudies"
@@ -1451,6 +1536,7 @@ function drawChart(candles, compareCandles = null) {
       tradingChart.subscribeCrosshairMove((param) => {
         if (!param || !param.point || param.point.x < 0 || param.point.y < 0) {
           toolTip.style.display = "none";
+          syncInstitutionalHover(null);
           return;
         }
 
@@ -1473,6 +1559,8 @@ function drawChart(candles, compareCandles = null) {
             compareHtml = `<div><strong>${t("chartTypeCompare")}:</strong> ${formatPrice(compareValue)}</div>`;
           }
         }
+
+        syncInstitutionalHover({ open, high, low, close });
 
         toolTip.style.display = "block";
         toolTip.style.left = `${param.point.x + 12}px`;
@@ -2138,12 +2226,9 @@ async function handleSearch(silentRefresh = false) {
       companyExchange.textContent = `${exchangeLabel} • ${getQuoteSourceLabel(quote)}`;
     }
 
-    if (currentPrice) currentPrice.textContent = formatPrice(quote.c);
-    if (changePercent) changePercent.textContent = `${Number(quote.dp || 0).toFixed(2)}%`;
-    if (openPrice) openPrice.textContent = formatPrice(quote.o);
-    if (highPrice) highPrice.textContent = formatPrice(quote.h);
-    if (lowPrice) lowPrice.textContent = formatPrice(quote.l);
-    if (prevClose) prevClose.textContent = formatPrice(quote.pc);
+    latestRenderedQuote = { ...quote };
+    latestRenderedProfile = { ...profile };
+    applyQuoteCardValues(quote);
 
     if (requestId !== activeSearchRequestId) return;
 

@@ -576,20 +576,290 @@ async function fetchExternalJson(url, options = {}) {
   }
 }
 
-async function getQuoteTwelve(symbol) {
+async function getQuoteFinnhub(symbol) {
   try {
-    const url = `https://api.twelvedata.com/price?symbol=${symbol}&apikey=${process.env.TWELVE_API_KEY}`;
-    const res = await fetch(url);
-    const data = await res.json();
+    const token = process.env.FINNHUB_API_KEY;
+    if (!token) return null;
 
-    if (!data || !data.price) throw new Error("Sem preço");
+    const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${token}`;
+    const data = await fetchExternalJson(url, { timeoutMs: 10000 });
+
+    const hasUsableQuote =
+      data &&
+      typeof data === "object" &&
+      [data.c, data.o, data.h, data.l, data.pc].some((value) => value != null && !Number.isNaN(Number(value)));
+
+    if (!hasUsableQuote) {
+      return null;
+    }
 
     return {
-      c: Number(data.price),
+      c: Number.isFinite(Number(data.c)) ? Number(data.c) : null,
+      d: Number.isFinite(Number(data.d)) ? Number(data.d) : null,
+      dp: Number.isFinite(Number(data.dp)) ? Number(data.dp) : null,
+      h: Number.isFinite(Number(data.h)) ? Number(data.h) : null,
+      l: Number.isFinite(Number(data.l)) ? Number(data.l) : null,
+      o: Number.isFinite(Number(data.o)) ? Number(data.o) : null,
+      pc: Number.isFinite(Number(data.pc)) ? Number(data.pc) : null,
+      source: "finnhub"
+    };
+  } catch (err) {
+    console.log("Finnhub falhou:", err.message);
+    return null;
+  }
+}
+
+async function getQuoteTwelve(symbol) {
+  try {
+    const token = process.env.TWELVE_API_KEY;
+    if (!token) return null;
+
+    const url = `https://api.twelvedata.com/quote?symbol=${symbol}&apikey=${token}`;
+    const data = await fetchExternalJson(url, { timeoutMs: 10000 });
+
+    if (!data || data.status === "error") throw new Error(data?.message || "Sem dados");
+
+    const currentPrice = Number(data.close ?? data.price);
+    const previousClose = Number(data.previous_close);
+    const delta = Number(data.change);
+    const deltaPercent = Number(data.percent_change);
+    const high = Number(data.high);
+    const low = Number(data.low);
+    const open = Number(data.open);
+
+    if (![currentPrice, previousClose, high, low, open].some(Number.isFinite)) {
+      throw new Error("Sem preço utilizável");
+    }
+
+    return {
+      c: Number.isFinite(currentPrice) ? currentPrice : null,
+      d: Number.isFinite(delta) ? delta : null,
+      dp: Number.isFinite(deltaPercent) ? deltaPercent : null,
+      h: Number.isFinite(high) ? high : null,
+      l: Number.isFinite(low) ? low : null,
+      o: Number.isFinite(open) ? open : null,
+      pc: Number.isFinite(previousClose) ? previousClose : null,
       source: "twelvedata"
     };
   } catch (err) {
     console.log("TwelveData falhou:", err.message);
+    return null;
+  }
+}
+
+function getCandlesProviderConfig(timeframe) {
+  const normalized = normalizeTimeframe(timeframe);
+
+  return {
+    "1D": {
+      finnhubResolution: "5",
+      twelveInterval: "5min",
+      outputsize: 120,
+      fromSeconds: 2 * 24 * 60 * 60,
+      minPoints: 12,
+      maxPoints: 390,
+      yahooRange: "1d",
+      yahooInterval: "5m",
+      yahooFallbackIntervals: ["15m", "30m"]
+    },
+    "5D": {
+      finnhubResolution: "30",
+      twelveInterval: "30min",
+      outputsize: 200,
+      fromSeconds: 7 * 24 * 60 * 60,
+      minPoints: 10,
+      maxPoints: 240,
+      yahooRange: "5d",
+      yahooInterval: "30m",
+      yahooFallbackIntervals: ["60m", "1d"]
+    },
+    "1M": {
+      finnhubResolution: "60",
+      twelveInterval: "1h",
+      outputsize: 260,
+      fromSeconds: 35 * 24 * 60 * 60,
+      minPoints: 10,
+      maxPoints: 260,
+      yahooRange: "1mo",
+      yahooInterval: "60m",
+      yahooFallbackIntervals: ["1d"]
+    },
+    "3M": {
+      finnhubResolution: "D",
+      twelveInterval: "1day",
+      outputsize: 130,
+      fromSeconds: 100 * 24 * 60 * 60,
+      minPoints: 10,
+      maxPoints: 130,
+      yahooRange: "3mo",
+      yahooInterval: "1d",
+      yahooFallbackIntervals: ["1wk"]
+    },
+    "1Y": {
+      finnhubResolution: "D",
+      twelveInterval: "1day",
+      outputsize: 260,
+      fromSeconds: 370 * 24 * 60 * 60,
+      minPoints: 10,
+      maxPoints: 260,
+      yahooRange: "1y",
+      yahooInterval: "1d",
+      yahooFallbackIntervals: ["1wk"]
+    }
+  }[normalized];
+}
+
+function normalizeCandlesPayload(payload, maxPoints = null) {
+  const rows = [];
+  const seen = new Set();
+
+  for (let i = 0; i < payload.c.length; i += 1) {
+    const time = Number(payload.t[i]);
+    const open = Number(payload.o[i]);
+    const high = Number(payload.h[i]);
+    const low = Number(payload.l[i]);
+    const close = Number(payload.c[i]);
+    const volume = Number(payload.v?.[i]);
+
+    if (![time, open, high, low, close].every(Number.isFinite)) continue;
+    if (seen.has(time)) continue;
+
+    seen.add(time);
+    rows.push({
+      time,
+      open,
+      high,
+      low,
+      close,
+      volume: Number.isFinite(volume) ? volume : 0
+    });
+  }
+
+  rows.sort((a, b) => a.time - b.time);
+
+  const trimmed = Number.isFinite(maxPoints) && maxPoints > 0 && rows.length > maxPoints
+    ? rows.slice(rows.length - maxPoints)
+    : rows;
+
+  return {
+    t: trimmed.map((row) => row.time),
+    o: trimmed.map((row) => row.open),
+    h: trimmed.map((row) => row.high),
+    l: trimmed.map((row) => row.low),
+    c: trimmed.map((row) => row.close),
+    v: trimmed.map((row) => row.volume)
+  };
+}
+
+async function getCandlesFinnhub(symbol, timeframe) {
+  try {
+    const token = process.env.FINNHUB_API_KEY;
+    if (!token) return null;
+
+    const config = getCandlesProviderConfig(timeframe);
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - config.fromSeconds;
+
+    const url =
+      `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}` +
+      `&resolution=${config.finnhubResolution}&from=${from}&to=${now}&token=${token}`;
+
+    const data = await fetchExternalJson(url, { timeoutMs: 12000 });
+
+    if (!data || data.s !== "ok" || !Array.isArray(data.c) || data.c.length < config.minPoints) {
+      return null;
+    }
+
+    const normalized = normalizeCandlesPayload({
+      t: data.t || [],
+      o: data.o || [],
+      h: data.h || [],
+      l: data.l || [],
+      c: data.c || [],
+      v: data.v || []
+    }, config.maxPoints);
+
+    if (normalized.c.length < config.minPoints) {
+      return null;
+    }
+
+    return {
+      s: "ok",
+      t: normalized.t,
+      o: normalized.o,
+      h: normalized.h,
+      l: normalized.l,
+      c: normalized.c,
+      v: normalized.v || [],
+      timeframe: normalizeTimeframe(timeframe),
+      interval: config.finnhubResolution,
+      source: "finnhub",
+      points: normalized.c.length
+    };
+  } catch (err) {
+    console.log("Finnhub candles falhou:", err.message);
+    return null;
+  }
+}
+
+async function getCandlesTwelve(symbol, timeframe) {
+  try {
+    const token = process.env.TWELVE_API_KEY;
+    if (!token) return null;
+
+    const config = getCandlesProviderConfig(timeframe);
+    const url =
+      `https://api.twelvedata.com/time_series?symbol=${symbol}` +
+      `&interval=${config.twelveInterval}&outputsize=${config.outputsize}&apikey=${token}`;
+
+    const data = await fetchExternalJson(url, { timeoutMs: 12000 });
+    const values = Array.isArray(data?.values) ? data.values : [];
+
+    if (!values.length) {
+      return null;
+    }
+
+    const payload = { t: [], o: [], h: [], l: [], c: [], v: [] };
+
+    for (const item of values.slice().reverse()) {
+      const epochMs = Date.parse(item.datetime);
+      const time = Number.isFinite(epochMs) ? Math.floor(epochMs / 1000) : NaN;
+      const open = Number(item.open);
+      const high = Number(item.high);
+      const low = Number(item.low);
+      const close = Number(item.close);
+      const volume = Number(item.volume);
+
+      if (![time, open, high, low, close].every(Number.isFinite)) continue;
+
+      payload.t.push(time);
+      payload.o.push(open);
+      payload.h.push(high);
+      payload.l.push(low);
+      payload.c.push(close);
+      payload.v.push(Number.isFinite(volume) ? volume : 0);
+    }
+
+    const normalized = normalizeCandlesPayload(payload, config.maxPoints);
+    if (normalized.c.length < config.minPoints) {
+      return null;
+    }
+
+    return {
+      s: "ok",
+      t: normalized.t,
+      o: normalized.o,
+      h: normalized.h,
+      l: normalized.l,
+      c: normalized.c,
+      v: normalized.v || [],
+      timeframe: normalizeTimeframe(timeframe),
+      interval: config.twelveInterval,
+      source: "twelvedata",
+      points: normalized.c.length
+    };
+  } catch (err) {
+    console.log("TwelveData candles falhou:", err.message);
     return null;
   }
 }
@@ -1017,52 +1287,22 @@ app.get("/api/quote/:symbol", createRateLimiter({ windowMs: 60 * 1000, max: 80 }
       return null;
     }
 
-    let data = await fetchYahooChartQuote();
+    let data = null;
+
+    const finnhubQuote = await getQuoteFinnhub(symbol);
+    if (finnhubQuote) {
+      data = buildQuotePayload(finnhubQuote);
+    }
 
     if (!data) {
-      try {
-        const token = process.env.FINNHUB_API_KEY;
-        const finnhubUrl = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${token}`;
-        const finnhubData = await fetchExternalJson(finnhubUrl, { timeoutMs: 10000 });
-
-        const hasFinnhubQuote =
-          finnhubData &&
-          typeof finnhubData === "object" &&
-          [finnhubData.c, finnhubData.o, finnhubData.h, finnhubData.l, finnhubData.pc]
-            .some((v) => v != null && !Number.isNaN(Number(v)));
-
-        if (hasFinnhubQuote) {
-          data = buildQuotePayload({
-            c: finnhubData.c,
-            d: finnhubData.d,
-            dp: finnhubData.dp,
-            h: finnhubData.h,
-            l: finnhubData.l,
-            o: finnhubData.o,
-            pc: finnhubData.pc,
-            source: "finnhub"
-          });
-        }
-      } catch (error) {
-        console.log("Finnhub falhou:", error.message);
+      const twelveQuote = await getQuoteTwelve(symbol);
+      if (twelveQuote) {
+        data = buildQuotePayload(twelveQuote);
       }
     }
 
     if (!data) {
-      const twelveData = await getQuoteTwelve(symbol);
-
-      if (twelveData) {
-        data = buildQuotePayload({
-          c: twelveData.c,
-          d: null,
-          dp: null,
-          h: null,
-          l: null,
-          o: null,
-          pc: null,
-          source: "twelvedata"
-        });
-      }
+      data = await fetchYahooChartQuote();
     }
 
     if (!data) {
@@ -1217,95 +1457,10 @@ app.get("/api/candles/:symbol", async (req, res) => {
       return res.json(cached);
     }
 
-    const timeframeConfig = {
-      "1D": {
-        range: "1d",
-        interval: "5m",
-        fallbackIntervals: ["15m", "30m"],
-        periodDays: 2,
-        minPoints: 12,
-        maxPoints: 390
-      },
-      "5D": {
-        range: "5d",
-        interval: "30m",
-        fallbackIntervals: ["60m", "1d"],
-        periodDays: 7,
-        minPoints: 10,
-        maxPoints: 240
-      },
-      "1M": {
-        range: "1mo",
-        interval: "60m",
-        fallbackIntervals: ["1d"],
-        periodDays: 35,
-        minPoints: 10,
-        maxPoints: 260
-      },
-      "3M": {
-        range: "3mo",
-        interval: "1d",
-        fallbackIntervals: ["1wk"],
-        periodDays: 100,
-        minPoints: 10,
-        maxPoints: 130
-      },
-      "1Y": {
-        range: "1y",
-        interval: "1d",
-        fallbackIntervals: ["1wk"],
-        periodDays: 370,
-        minPoints: 10,
-        maxPoints: 260
-      }
-    };
-
-    const selected = timeframeConfig[timeframe] || timeframeConfig["5D"];
+    const selected = getCandlesProviderConfig(timeframe);
     const intervalsToTry = Array.from(
-      new Set([selected.interval, ...(Array.isArray(selected.fallbackIntervals) ? selected.fallbackIntervals : [])].filter(Boolean))
+      new Set([selected.yahooInterval, ...(Array.isArray(selected.yahooFallbackIntervals) ? selected.yahooFallbackIntervals : [])].filter(Boolean))
     );
-
-    function normalizeCandlesPayload(payload, maxPoints = null) {
-      const rows = [];
-      const seen = new Set();
-
-      for (let i = 0; i < payload.c.length; i += 1) {
-        const time = Number(payload.t[i]);
-        const open = Number(payload.o[i]);
-        const high = Number(payload.h[i]);
-        const low = Number(payload.l[i]);
-        const close = Number(payload.c[i]);
-        const volume = Number(payload.v?.[i]);
-
-        if (![time, open, high, low, close].every(Number.isFinite)) continue;
-        if (seen.has(time)) continue;
-
-        seen.add(time);
-        rows.push({
-          time,
-          open,
-          high,
-          low,
-          close,
-          volume: Number.isFinite(volume) ? volume : 0
-        });
-      }
-
-      rows.sort((a, b) => a.time - b.time);
-
-      const trimmed = Number.isFinite(maxPoints) && maxPoints > 0 && rows.length > maxPoints
-        ? rows.slice(rows.length - maxPoints)
-        : rows;
-
-      return {
-        t: trimmed.map((row) => row.time),
-        o: trimmed.map((row) => row.open),
-        h: trimmed.map((row) => row.high),
-        l: trimmed.map((row) => row.low),
-        c: trimmed.map((row) => row.close),
-        v: trimmed.map((row) => row.volume)
-      };
-    }
 
     function extractYahooCandles(result) {
       const timestamps = Array.isArray(result?.timestamp) ? result.timestamp : [];
@@ -1345,73 +1500,101 @@ app.get("/api/candles/:symbol", async (req, res) => {
       return normalizeCandlesPayload(payload, selected.maxPoints);
     }
 
-    let candlesPayload = null;
-    let intervalUsed = selected.interval;
-    let source = "yahoo-range";
-
-    for (const interval of intervalsToTry) {
-      const rangeUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${selected.range}&interval=${interval}&includePrePost=false&events=div,splits`;
-      try {
-        const data = await fetchExternalJson(rangeUrl, { timeoutMs: 12000 });
-        const result = data?.chart?.result?.[0];
-        const extracted = extractYahooCandles(result);
-
-        if (extracted.c.length >= selected.minPoints) {
-          candlesPayload = extracted;
-          intervalUsed = interval;
-          source = "yahoo-range";
-          break;
-        }
-      } catch (err) {
-        console.log(`Yahoo range candles falhou para ${symbol} em ${interval}:`, err.message);
-      }
-    }
-
-    if (!candlesPayload || candlesPayload.c.length < 2) {
-      const now = Math.floor(Date.now() / 1000);
-      const rangeDays = selected.periodDays || (timeframe === "1D" ? 2 : timeframe === "5D" ? 7 : timeframe === "1M" ? 35 : timeframe === "3M" ? 100 : 370);
-      const from = now - rangeDays * 24 * 60 * 60;
+    async function fetchYahooCandles() {
+      let candlesPayload = null;
+      let intervalUsed = selected.yahooInterval;
+      let source = "yahoo-range";
 
       for (const interval of intervalsToTry) {
-        const periodUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=${from}&period2=${now + 86400}&interval=${interval}&includePrePost=false`;
+        const rangeUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${selected.yahooRange}&interval=${interval}&includePrePost=false&events=div,splits`;
         try {
-          const data = await fetchExternalJson(periodUrl, { timeoutMs: 12000 });
+          const data = await fetchExternalJson(rangeUrl, { timeoutMs: 12000 });
           const result = data?.chart?.result?.[0];
           const extracted = extractYahooCandles(result);
 
           if (extracted.c.length >= selected.minPoints) {
             candlesPayload = extracted;
             intervalUsed = interval;
-            source = "yahoo-period";
+            source = "yahoo-range";
             break;
           }
         } catch (err) {
-          console.log(`Yahoo period candles falhou para ${symbol} em ${interval}:`, err.message);
+          console.log(`Yahoo range candles falhou para ${symbol} em ${interval}:`, err.message);
         }
       }
+
+      if (!candlesPayload || candlesPayload.c.length < 2) {
+        const now = Math.floor(Date.now() / 1000);
+        const from = now - selected.fromSeconds;
+
+        for (const interval of intervalsToTry) {
+          const periodUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=${from}&period2=${now + 86400}&interval=${interval}&includePrePost=false`;
+          try {
+            const data = await fetchExternalJson(periodUrl, { timeoutMs: 12000 });
+            const result = data?.chart?.result?.[0];
+            const extracted = extractYahooCandles(result);
+
+            if (extracted.c.length >= selected.minPoints) {
+              candlesPayload = extracted;
+              intervalUsed = interval;
+              source = "yahoo-period";
+              break;
+            }
+          } catch (err) {
+            console.log(`Yahoo period candles falhou para ${symbol} em ${interval}:`, err.message);
+          }
+        }
+      }
+
+      if (!candlesPayload || candlesPayload.c.length < 2) {
+        return null;
+      }
+
+      return {
+        s: "ok",
+        t: candlesPayload.t,
+        o: candlesPayload.o,
+        h: candlesPayload.h,
+        l: candlesPayload.l,
+        c: candlesPayload.c,
+        v: candlesPayload.v || [],
+        timeframe,
+        interval: intervalUsed,
+        source,
+        points: candlesPayload.c.length
+      };
     }
 
-    if (!candlesPayload || candlesPayload.c.length < 2) {
-      const payload = { s: "no_data", t: [], o: [], h: [], l: [], c: [], v: [], timeframe, interval: selected.interval, source: "unavailable", points: 0 };
+    let payload = await getCandlesFinnhub(symbol, timeframe);
+
+    if (!payload) {
+      payload = await getCandlesTwelve(symbol, timeframe);
+    }
+
+    if (!payload) {
+      payload = await fetchYahooCandles();
+    }
+
+    if (!payload) {
+      payload = {
+        s: "no_data",
+        t: [],
+        o: [],
+        h: [],
+        l: [],
+        c: [],
+        v: [],
+        timeframe,
+        interval: selected.yahooInterval,
+        source: "unavailable",
+        points: 0
+      };
       setCacheEntry(cacheKey, payload, 30 * 1000);
       return res.json(payload);
     }
 
-    const payload = {
-      s: "ok",
-      t: candlesPayload.t,
-      o: candlesPayload.o,
-      h: candlesPayload.h,
-      l: candlesPayload.l,
-      c: candlesPayload.c,
-      v: candlesPayload.v || [],
-      timeframe,
-      interval: intervalUsed,
-      source,
-      points: candlesPayload.c.length
-    };
-
-    setCacheEntry(cacheKey, payload, 2 * 60 * 1000);
+    const ttl = payload?.source?.startsWith("yahoo") ? 60 * 1000 : 2 * 60 * 1000;
+    setCacheEntry(cacheKey, payload, ttl);
     res.json(payload);
   } catch (error) {
     console.error("Erro candles timeframe:", error.message);

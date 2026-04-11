@@ -306,8 +306,13 @@ function startAutoRefresh(symbol) {
   }, intervalMs);
 }
 
+function isUnlimitedAccessUser() {
+  return !!isAdminUser || (currentPlan === "pro" && currentPlanStatus === "active");
+}
+
 function hasReachedLimit() {
   if (!usageData) return false;
+  if (isUnlimitedAccessUser()) return false;
   if (usageData.limit === "∞") return false;
   return Number(usageData.remaining) <= 0;
 }
@@ -340,9 +345,8 @@ function canUsePreviewAfterLimit(requestedSymbol = "", { silentRefresh = false }
 function getUsageBadgeMessage(data = usageData) {
   const limit = data?.limit;
   const remaining = Number(data?.remaining);
-  const proLikeUser = !!data?.isAdmin || (data?.plan === "pro" && data?.status === "active") || (currentPlan === "pro" && currentPlanStatus === "active") || isAdminUser;
 
-  if (proLikeUser || limit === "∞") {
+  if (limit === "∞") {
     return currentLang === "en"
       ? "Unlimited analyses today"
       : "Análises ilimitadas hoje";
@@ -1303,6 +1307,10 @@ function updatePlanUI() {
     if (portfolioSection) portfolioSection.classList.add("hidden");
     if (portfolioStatus) portfolioStatus.textContent = t("portfolioLocked");
   }
+
+  if (isUnlimitedAccessUser()) {
+    updateUpgradeBanner({ visible: false });
+  }
 }
 
 function renderFavorites() {
@@ -2145,7 +2153,6 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
   const textEl = document.getElementById("marketSignalText");
   const warningEl = document.getElementById("marketSignalWarning");
   const btnEl = document.getElementById("signalUpgradeBtn");
-  const proLikeUser = isAdminUser || (currentPlan === "pro" && currentPlanStatus === "active");
 
   if (!snapshot) {
     if (symbolEl) symbolEl.textContent = currentLang === "en" ? "Waiting for asset" : "Aguardando ativo";
@@ -2156,22 +2163,16 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
     if (textEl) textEl.textContent = currentLang === "en"
       ? "Run an analysis to unlock the signal, live chart and fast asset reading."
       : "Faça uma análise para liberar o sinal, o gráfico ao vivo e a leitura rápida do ativo.";
-    if (warningEl) warningEl.textContent = proLikeUser
-      ? (currentLang === "en" ? "Admin/pro mode active. Monitoring without commercial pressure." : "Modo admin/pro ativo. Monitoramento sem pressão comercial.")
+    if (warningEl) warningEl.textContent = isUnlimitedAccessUser()
+      ? (currentLang === "en"
+          ? "Admin / Pro mode active. Advanced monitoring enabled."
+          : "Modo admin / Pro ativo. Monitoramento avançado habilitado.")
       : (currentLang === "en"
           ? "See the value first. Unlock the advanced features when it makes sense."
           : "Veja o valor primeiro. Desbloqueie os recursos avançados quando fizer sentido.");
-    if (btnEl) {
-      if (proLikeUser) {
-        btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
-        btnEl.disabled = true;
-        btnEl.onclick = null;
-      } else {
-        btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
-        btnEl.disabled = false;
-        btnEl.onclick = () => openUpgrade("pro");
-      }
-    }
+    if (btnEl) btnEl.textContent = isUnlimitedAccessUser()
+      ? (currentLang === "en" ? "Pro plan active" : "Plano Pro ativo")
+      : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
     return;
   }
 
@@ -2203,18 +2204,13 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
     labelEl.className = `market-signal-label ${tone}`;
   }
   if (textEl) textEl.textContent = text;
-  if (warningEl) warningEl.textContent = proLikeUser
-    ? (currentLang === "en"
-        ? "Admin/pro mode active. Advanced monitoring enabled."
-        : "Modo admin/pro ativo. Monitoramento avançado habilitado.")
-    : (currentLang === "en"
-        ? "You may miss this opportunity if you wait too long."
-        : "⚠️ Você pode perder essa oportunidade se esperar.");
+  if (warningEl) warningEl.textContent = currentLang === "en"
+    ? "You may miss this opportunity if you wait too long."
+    : "⚠️ Você pode perder essa oportunidade se esperar.";
   if (btnEl) {
-    if (proLikeUser) {
+    if (currentPlan === "pro" && currentPlanStatus === "active") {
       btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
       btnEl.disabled = true;
-      btnEl.onclick = null;
     } else {
       btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
       btnEl.disabled = false;
@@ -2788,7 +2784,11 @@ async function loadSubscription() {
   }
 
   updatePlanUI();
-if (!(currentPlan === "pro" && currentPlanStatus === "active") &&
+  if (isUnlimitedAccessUser()) {
+    updateUsageUI({ ...usageData, plan: currentPlan, status: currentPlanStatus, isAdmin: isAdminUser, limit: "∞", remaining: "∞" });
+    updateUpgradeBanner({ visible: false });
+  }
+  if (!(currentPlan === "pro" && currentPlanStatus === "active") &&
       !(currentPlan === "starter" && currentPlanStatus === "active")) {
     stopAutoRefresh();
   }
@@ -3732,7 +3732,7 @@ function setAdminStatus(message) {
 function updateUsageUI(data) {
   if (!data) return;
 
-  usageData = {
+  const nextData = {
     ...usageData,
     ...data
   };
@@ -3740,27 +3740,33 @@ function updateUsageUI(data) {
   if (data.plan) {
     currentPlan = data.plan || "free";
     currentPlanStatus = data.status || "inactive";
-    updatePlanUI();
   }
 
   isAdminUser = !!data.isAdmin;
-  const proLikeUser = isAdminUser || (currentPlan === "pro" && currentPlanStatus === "active");
+
+  if (isUnlimitedAccessUser()) {
+    nextData.limit = "∞";
+    nextData.remaining = "∞";
+  }
+
+  usageData = nextData;
+  updatePlanUI();
 
   const usageBadge = getUsageBadge();
   if (usageBadge) {
-    usageBadge.textContent = getUsageBadgeMessage(data);
-    usageBadge.title = proLikeUser
-      ? (currentLang === "en" ? "Unlimited access active." : "Acesso ilimitado ativo.")
+    usageBadge.textContent = getUsageBadgeMessage(usageData);
+    usageBadge.title = isUnlimitedAccessUser()
+      ? (currentLang === "en" ? "Unlimited analyses available today" : "Análises ilimitadas disponíveis hoje")
       : (currentLang === "en"
-          ? `Used today: ${data.used ?? 0} • Remaining: ${data.remaining}`
-          : `Usadas hoje: ${data.used ?? 0} • Restantes: ${data.remaining}`);
-    usageBadge.dataset.state = proLikeUser
-      ? "pro"
-      : Number(data.remaining) <= 0 ? "locked" : Number(data.remaining) === 1 ? "warning" : "active";
+          ? `Used today: ${usageData.used ?? 0} • Remaining: ${usageData.remaining}`
+          : `Usadas hoje: ${usageData.used ?? 0} • Restantes: ${usageData.remaining}`);
+    usageBadge.dataset.state = isUnlimitedAccessUser()
+      ? "unlimited"
+      : Number(usageData.remaining) <= 0 ? "locked" : Number(usageData.remaining) === 1 ? "warning" : "active";
   }
 
   if (searchBtn) {
-    const blocked = !proLikeUser && data.limit !== "∞" && Number(data.remaining) <= 0;
+    const blocked = !isUnlimitedAccessUser() && usageData.limit !== "∞" && Number(usageData.remaining) <= 0;
     searchBtn.disabled = false;
     searchBtn.style.opacity = "1";
     searchBtn.textContent = blocked
@@ -3768,12 +3774,12 @@ function updateUsageUI(data) {
       : t("analyze");
   }
 
-  if (proLikeUser) {
+  if (isUnlimitedAccessUser()) {
     updateUpgradeBanner({ visible: false });
-  } else if (Number(data.remaining) <= 1 && Number(data.limit) !== Infinity) {
+  } else if (Number(usageData.remaining) <= 1 && Number(usageData.limit) !== Infinity) {
     updateUpgradeBanner({
       visible: true,
-      title: Number(data.remaining) <= 0
+      title: Number(usageData.remaining) <= 0
         ? (currentLang === "en" ? "Limit reached — unlock unlimited analyses now" : "Limite atingido — desbloqueie análises ilimitadas agora")
         : (currentLang === "en" ? "You are on your last free analysis" : "Você está na sua última análise grátis"),
       subtitle: currentLang === "en"

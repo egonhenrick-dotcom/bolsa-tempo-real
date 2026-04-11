@@ -318,10 +318,6 @@ function isFreeTierUser() {
   return !currentUser || currentPlan === "free" || currentPlanStatus !== "active";
 }
 
-function hasUnlimitedAccess() {
-  return !!isAdminUser || (currentPlan === "pro" && currentPlanStatus === "active");
-}
-
 function getPreviewLockedSymbol(requestedSymbol = "") {
   return normalizeSymbol(currentSymbol || requestedSymbol || symbolInput?.value || DEFAULT_FREE_PREVIEW_SYMBOL);
 }
@@ -344,8 +340,9 @@ function canUsePreviewAfterLimit(requestedSymbol = "", { silentRefresh = false }
 function getUsageBadgeMessage(data = usageData) {
   const limit = data?.limit;
   const remaining = Number(data?.remaining);
+  const proLikeUser = !!data?.isAdmin || (data?.plan === "pro" && data?.status === "active") || (currentPlan === "pro" && currentPlanStatus === "active") || isAdminUser;
 
-  if (hasUnlimitedAccess() || limit === "∞") {
+  if (proLikeUser || limit === "∞") {
     return currentLang === "en"
       ? "Unlimited analyses today"
       : "Análises ilimitadas hoje";
@@ -1302,7 +1299,6 @@ function updatePlanUI() {
   if (currentPlan === "pro" && currentPlanStatus === "active") {
     if (portfolioSection) portfolioSection.classList.remove("hidden");
     if (portfolioStatus) portfolioStatus.textContent = t("portfolioEnabled");
-    updateUpgradeBanner({ visible: false });
   } else {
     if (portfolioSection) portfolioSection.classList.add("hidden");
     if (portfolioStatus) portfolioStatus.textContent = t("portfolioLocked");
@@ -2149,10 +2145,7 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
   const textEl = document.getElementById("marketSignalText");
   const warningEl = document.getElementById("marketSignalWarning");
   const btnEl = document.getElementById("signalUpgradeBtn");
-
-  if (btnEl) {
-    btnEl.disabled = false;
-  }
+  const proLikeUser = isAdminUser || (currentPlan === "pro" && currentPlanStatus === "active");
 
   if (!snapshot) {
     if (symbolEl) symbolEl.textContent = currentLang === "en" ? "Waiting for asset" : "Aguardando ativo";
@@ -2163,15 +2156,20 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
     if (textEl) textEl.textContent = currentLang === "en"
       ? "Run an analysis to unlock the signal, live chart and fast asset reading."
       : "Faça uma análise para liberar o sinal, o gráfico ao vivo e a leitura rápida do ativo.";
-    if (warningEl) warningEl.textContent = currentLang === "en"
-      ? "See the value first. Unlock the advanced features when it makes sense."
-      : "Veja o valor primeiro. Desbloqueie os recursos avançados quando fizer sentido.";
+    if (warningEl) warningEl.textContent = proLikeUser
+      ? (currentLang === "en" ? "Admin/pro mode active. Monitoring without commercial pressure." : "Modo admin/pro ativo. Monitoramento sem pressão comercial.")
+      : (currentLang === "en"
+          ? "See the value first. Unlock the advanced features when it makes sense."
+          : "Veja o valor primeiro. Desbloqueie os recursos avançados quando fizer sentido.");
     if (btnEl) {
-      if (hasUnlimitedAccess()) {
+      if (proLikeUser) {
         btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
         btnEl.disabled = true;
+        btnEl.onclick = null;
       } else {
         btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
+        btnEl.disabled = false;
+        btnEl.onclick = () => openUpgrade("pro");
       }
     }
     return;
@@ -2205,13 +2203,18 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
     labelEl.className = `market-signal-label ${tone}`;
   }
   if (textEl) textEl.textContent = text;
-  if (warningEl) warningEl.textContent = currentLang === "en"
-    ? "You may miss this opportunity if you wait too long."
-    : "⚠️ Você pode perder essa oportunidade se esperar.";
+  if (warningEl) warningEl.textContent = proLikeUser
+    ? (currentLang === "en"
+        ? "Admin/pro mode active. Advanced monitoring enabled."
+        : "Modo admin/pro ativo. Monitoramento avançado habilitado.")
+    : (currentLang === "en"
+        ? "You may miss this opportunity if you wait too long."
+        : "⚠️ Você pode perder essa oportunidade se esperar.");
   if (btnEl) {
-    if (currentPlan === "pro" && currentPlanStatus === "active") {
+    if (proLikeUser) {
       btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
       btnEl.disabled = true;
+      btnEl.onclick = null;
     } else {
       btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
       btnEl.disabled = false;
@@ -3741,21 +3744,23 @@ function updateUsageUI(data) {
   }
 
   isAdminUser = !!data.isAdmin;
+  const proLikeUser = isAdminUser || (currentPlan === "pro" && currentPlanStatus === "active");
 
   const usageBadge = getUsageBadge();
   if (usageBadge) {
-    const unlimited = hasUnlimitedAccess() || data.limit === "∞";
     usageBadge.textContent = getUsageBadgeMessage(data);
-    usageBadge.title = unlimited
-      ? (currentLang === "en" ? "Unlimited access released for this account." : "Acesso ilimitado liberado para esta conta.")
-      : currentLang === "en"
-        ? `Used today: ${data.used ?? 0} • Remaining: ${data.remaining}`
-        : `Usadas hoje: ${data.used ?? 0} • Restantes: ${data.remaining}`;
-    usageBadge.dataset.state = unlimited ? "unlimited" : Number(data.remaining) <= 0 ? "locked" : Number(data.remaining) === 1 ? "warning" : "active";
+    usageBadge.title = proLikeUser
+      ? (currentLang === "en" ? "Unlimited access active." : "Acesso ilimitado ativo.")
+      : (currentLang === "en"
+          ? `Used today: ${data.used ?? 0} • Remaining: ${data.remaining}`
+          : `Usadas hoje: ${data.used ?? 0} • Restantes: ${data.remaining}`);
+    usageBadge.dataset.state = proLikeUser
+      ? "pro"
+      : Number(data.remaining) <= 0 ? "locked" : Number(data.remaining) === 1 ? "warning" : "active";
   }
 
   if (searchBtn) {
-    const blocked = !hasUnlimitedAccess() && data.limit !== "∞" && Number(data.remaining) <= 0;
+    const blocked = !proLikeUser && data.limit !== "∞" && Number(data.remaining) <= 0;
     searchBtn.disabled = false;
     searchBtn.style.opacity = "1";
     searchBtn.textContent = blocked
@@ -3763,11 +3768,9 @@ function updateUsageUI(data) {
       : t("analyze");
   }
 
-  if ((hasUnlimitedAccess() || Number(data.limit) === Infinity) && !isAdminUser) {
+  if (proLikeUser) {
     updateUpgradeBanner({ visible: false });
-  }
-
-  if (Number(data.remaining) <= 1 && Number(data.limit) !== Infinity && !isAdminUser && !hasUnlimitedAccess()) {
+  } else if (Number(data.remaining) <= 1 && Number(data.limit) !== Infinity) {
     updateUpgradeBanner({
       visible: true,
       title: Number(data.remaining) <= 0

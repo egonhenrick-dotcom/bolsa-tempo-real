@@ -308,6 +308,7 @@ function startAutoRefresh(symbol) {
 
 function hasReachedLimit() {
   if (!usageData) return false;
+  if (!currentUser) return false;
   if (usageData.limit === "∞") return false;
   return Number(usageData.remaining) <= 0;
 }
@@ -2422,6 +2423,37 @@ function bindAutocompleteInput(kind = "symbol") {
   });
 }
 
+function buildPreviewQuoteFromCandles(candles = {}, existingQuote = {}) {
+  const closes = Array.isArray(candles?.c) ? candles.c.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
+  const opens = Array.isArray(candles?.o) ? candles.o.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
+  const highs = Array.isArray(candles?.h) ? candles.h.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
+  const lows = Array.isArray(candles?.l) ? candles.l.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
+
+  const close = closes.length ? closes[closes.length - 1] : Number(existingQuote?.c);
+  const previousClose = closes.length > 1
+    ? closes[closes.length - 2]
+    : Number(existingQuote?.pc ?? close);
+  const open = opens.length ? opens[opens.length - 1] : Number(existingQuote?.o ?? close);
+  const high = highs.length ? highs[highs.length - 1] : Number(existingQuote?.h ?? close);
+  const low = lows.length ? lows[lows.length - 1] : Number(existingQuote?.l ?? close);
+  const change = Number.isFinite(close) && Number.isFinite(previousClose) ? close - previousClose : 0;
+  const changePercent = Number.isFinite(close) && Number.isFinite(previousClose) && previousClose !== 0
+    ? (change / previousClose) * 100
+    : 0;
+
+  return {
+    c: Number.isFinite(close) ? close : null,
+    d: Number.isFinite(change) ? change : 0,
+    dp: Number.isFinite(changePercent) ? changePercent : 0,
+    h: Number.isFinite(high) ? high : null,
+    l: Number.isFinite(low) ? low : null,
+    o: Number.isFinite(open) ? open : null,
+    pc: Number.isFinite(previousClose) ? previousClose : null,
+    source: existingQuote?.source || "preview",
+    previewOnly: true
+  };
+}
+
 async function handleSearch(silentRefresh = false) {
   if (isSearchingNow) return;
   const symbol = normalizeSymbol(symbolInput?.value);
@@ -2432,15 +2464,19 @@ async function handleSearch(silentRefresh = false) {
     return;
   }
 
-  if (!currentUser) {
+  const isVisitor = !currentUser;
+
+  if (isVisitor) {
     currentPlan = "free";
     currentPlanStatus = "inactive";
     updatePlanUI();
   }
 
   const usageBefore = await refreshUsage();
+  const limitReached = usageBefore && usageBefore.limit !== "∞" && Number(usageBefore.remaining) <= 0;
+  const allowVisitorPreview = isVisitor && limitReached;
 
-  if (usageBefore && usageBefore.limit !== "∞" && Number(usageBefore.remaining) <= 0) {
+  if (limitReached && !allowVisitorPreview) {
     await trackEvent("daily_limit_reached", {
       symbol,
       plan: currentPlan,
@@ -2459,9 +2495,7 @@ async function handleSearch(silentRefresh = false) {
   currentSymbol = symbol;
   updateFavoriteButton();
 
-  if (isSearchingNow) {
-    return;
-  }
+  if (isSearchingNow) return;
 
   const requestId = ++activeSearchRequestId;
   setSearchLoadingState(true);
@@ -2476,14 +2510,18 @@ async function handleSearch(silentRefresh = false) {
 
   try {
     const apiGet = currentUser ? fetchAuthJSON : fetchJSON;
+    const quotePromise = allowVisitorPreview
+      ? Promise.resolve({ c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, source: "preview", error: "PREVIEW_ONLY" })
+      : apiGet(`/api/quote/${symbol}`);
+
     const results = await Promise.allSettled([
-      apiGet(`/api/quote/${symbol}`),
-      apiGet(`/api/profile/${symbol}`),
-      fetchCandlesByTimeframe(symbol, !!currentUser, currentTimeframe),
-      apiGet(`/api/news/${symbol}`)
+      quotePromise,
+      fetchJSON(`/api/profile/${symbol}`),
+      fetchJSON(`/api/candles/${encodeURIComponent(symbol)}?${getTimeframeQuery(currentTimeframe)}`),
+      fetchJSON(`/api/news/${symbol}`)
     ]);
 
-    const quote = results[0].status === "fulfilled"
+    let quote = results[0].status === "fulfilled"
       ? results[0].value
       : { c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, error: "QUOTE_UNAVAILABLE" };
 
@@ -2498,6 +2536,10 @@ async function handleSearch(silentRefresh = false) {
     const news = results[3].status === "fulfilled"
       ? results[3].value
       : [];
+
+    if (allowVisitorPreview) {
+      quote = buildPreviewQuoteFromCandles(candles, quote);
+    }
 
     let compareCandles = null;
     const isPro = currentUser && currentPlan === "pro" && currentPlanStatus === "active";
@@ -2524,7 +2566,7 @@ async function handleSearch(silentRefresh = false) {
     if (companyTicker) companyTicker.textContent = displaySymbol(symbol);
     if (companyExchange) {
       const exchangeLabel = profile.exchange || t("exchange");
-      companyExchange.textContent = `${exchangeLabel} • ${getQuoteSourceLabel(quote)}`;
+      companyExchange.textContent = `${exchangeLabel} • ${allowVisitorPreview ? (currentLang === "en" ? "Preview mode" : "Modo visual") : getQuoteSourceLabel(quote)}`;
     }
 
     latestRenderedQuote = { ...quote };
@@ -2553,7 +2595,7 @@ async function handleSearch(silentRefresh = false) {
 
     if (candleSeries.length < 2) {
       setStatus(`⚠️ ${displaySymbol(symbol)} sem dados suficientes para o gráfico em ${getTimeframeLabel(currentTimeframe)}.`);
-    } else if (candles?.source || candles?.interval) {
+    } else if (!allowVisitorPreview && (candles?.source || candles?.interval)) {
       const chartInfo = [candles?.source || "chart", candles?.interval || ""].filter(Boolean).join(" • ");
       setStatus(`${t("updatedFor")} ${displaySymbol(symbol)} • ${getQuoteSourceLabel(quote)} • gráfico ${chartInfo}.`);
     }
@@ -2584,11 +2626,28 @@ async function handleSearch(silentRefresh = false) {
       const remaining = usageAfter?.remaining ?? "-";
       const baseStatus = getFriendlyAnalysisStatus(symbol, quote, candles);
       const tone = quote?.error === "QUOTE_UNAVAILABLE" ? "warning" : "success";
-      updateAnalysisStageBadge(`${displaySymbol(symbol)} • ${getQuoteSourceLabel(quote)}`, tone);
-      setStatus(isAnalysisPaused ? `⏸️ ${t("analysisPaused")} • ${baseStatus} ${t("remainingToday")}: ${remaining}` : `${baseStatus} ${t("remainingToday")}: ${remaining}`);
+      updateAnalysisStageBadge(`${displaySymbol(symbol)} • ${allowVisitorPreview ? (currentLang === "en" ? "Preview active" : "Prévia ativa") : getQuoteSourceLabel(quote)}`, tone);
+
+      if (allowVisitorPreview) {
+        const previewStatus = currentLang === "en"
+          ? `Preview unlocked for ${displaySymbol(symbol)}. The live chart is visible now. Login only when you want favorites, compare or unlimited analyses.`
+          : `Prévia liberada para ${displaySymbol(symbol)}. O gráfico ao vivo já está visível. Faça login apenas quando quiser favoritos, comparação ou análises ilimitadas.`;
+        setStatus(previewStatus);
+        await showSmartUpgrade("limit", { symbol, remaining });
+      } else {
+        setStatus(isAnalysisPaused ? `⏸️ ${t("analysisPaused")} • ${baseStatus} ${t("remainingToday")}: ${remaining}` : `${baseStatus} ${t("remainingToday")}: ${remaining}`);
+      }
     }
 
-    startAutoRefresh(symbol);
+    if (!allowVisitorPreview) {
+      startAutoRefresh(symbol);
+    } else {
+      stopAutoRefresh();
+      if (searchBtn) {
+        searchBtn.disabled = false;
+        searchBtn.style.opacity = "1";
+      }
+    }
   } catch (error) {
     setChartLoadingState(false);
     if (error.message === "LIMIT_REACHED") {
@@ -2601,8 +2660,8 @@ async function handleSearch(silentRefresh = false) {
       const remaining = usageAfterError?.remaining ?? 0;
       setStatus(`🚫 ${t("dailyLimitReached")} • 👉 ${t("upgradePlan")} (${t("remainingToday")}: ${remaining})`);
       if (searchBtn) {
-        searchBtn.disabled = true;
-        searchBtn.style.opacity = "0.5";
+        searchBtn.disabled = !isVisitor;
+        searchBtn.style.opacity = isVisitor ? "1" : "0.5";
       }
     } else {
       updateAnalysisStageBadge(`${displaySymbol(symbol)} • erro`, "danger");
@@ -2616,6 +2675,10 @@ async function handleSearch(silentRefresh = false) {
       }
       setSearchLoadingState(false);
       setChartLoadingState(false);
+      if (!currentUser && searchBtn) {
+        searchBtn.disabled = false;
+        searchBtn.style.opacity = "1";
+      }
     }
   }
 }

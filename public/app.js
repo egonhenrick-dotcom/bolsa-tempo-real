@@ -99,10 +99,10 @@ const translations = {
     qty: "Qty",
     avg: "Avg",
     remove: "Remove",
-    watchlistNewsChart: "Watchlist, favorites, news and chart.",
-    premiumDesc: "Asset comparison, portfolio and premium resources.",
+    watchlistNewsChart: "Ideal for tracking the market with more precision and without basic limits.",
+    premiumDesc: "For those who want to make decisions with a real advantage in the market.",
     heroTitle: "Gain an advantage in the market before others",
-    heroText: "Track stocks in real time, compare assets and build your portfolio with intelligence.",
+    heroText: "Discover buy and sell signals faster, with real-time data and a more professional workflow.",
     heroStart: "Start now",
     heroTry: "Try for free",
     heroProof: "🔥 +1,000 users analyzing the market every day",
@@ -201,10 +201,10 @@ const translations = {
     qty: "Qtd",
     avg: "PM",
     remove: "Remover",
-    watchlistNewsChart: "Watchlist, favoritos, notícias e gráfico.",
-    premiumDesc: "Comparação de ativos, carteira e recursos premium.",
+    watchlistNewsChart: "Ideal para acompanhar o mercado com mais precisão e sem limites básicos.",
+    premiumDesc: "Para quem quer tomar decisões com vantagem real no mercado.",
     heroTitle: "Ganhe vantagem no mercado antes dos outros",
-    heroText: "Acompanhe ações em tempo real, compare ativos e monte sua carteira com inteligência.",
+    heroText: "Descubra sinais de compra e venda mais rápido, com dados em tempo real e fluxo mais profissional.",
     heroStart: "Começar agora",
     heroTry: "Testar grátis",
     heroProof: "🔥 +1.000 usuários analisando o mercado todos os dias",
@@ -1198,12 +1198,23 @@ function updatePlanUI() {
   if (!currentUser) {
     if (userBadge) userBadge.textContent = t("visitor");
     if (signOutBtn) signOutBtn.classList.add("hidden");
+    if (logoutTopBtn) {
+      logoutTopBtn.classList.add("hidden");
+      logoutTopBtn.disabled = false;
+      logoutTopBtn.textContent = t("logout");
+    }
     if (portfolioSection) portfolioSection.classList.add("hidden");
+    syncPlanButtons();
     return;
   }
 
   if (userBadge) userBadge.textContent = currentUser.email || "Usuário";
   if (signOutBtn) signOutBtn.classList.remove("hidden");
+  if (logoutTopBtn) {
+    logoutTopBtn.classList.remove("hidden");
+    logoutTopBtn.disabled = false;
+    logoutTopBtn.textContent = t("logout");
+  }
 
   if (currentPlan === "pro" && currentPlanStatus === "active") {
     if (portfolioSection) portfolioSection.classList.remove("hidden");
@@ -1212,6 +1223,8 @@ function updatePlanUI() {
     if (portfolioSection) portfolioSection.classList.add("hidden");
     if (portfolioStatus) portfolioStatus.textContent = t("portfolioLocked");
   }
+
+  syncPlanButtons();
 }
 
 function renderFavorites() {
@@ -3100,8 +3113,7 @@ function applyTranslations() {
     if (p) p.textContent = t("premiumDesc");
   }
 
-  if (starterBtn) starterBtn.textContent = currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
-  if (proBtn) proBtn.textContent = currentLang === "en" ? "Subscribe Pro" : "Assinar Pro";
+  syncPlanButtons();
 
   if (symbolInput) symbolInput.placeholder = t("symbolPlaceholder");
   if (compareInput) compareInput.placeholder = t("comparePlaceholder");
@@ -3494,11 +3506,9 @@ function toggleAdminSection() {
   const adminSection = getAdminSection();
   if (!adminSection) return;
 
-  if (isAdminUser && currentUser) {
-    adminSection.classList.remove("hidden");
-  } else {
-    adminSection.classList.add("hidden");
-  }
+  const shouldShow = !!(isAdminUser && currentUser);
+  adminSection.classList.toggle("hidden", !shouldShow);
+  adminSection.style.display = shouldShow ? "" : "none";
 
   showDiagnosticsForAdminOnly();
 }
@@ -3667,6 +3677,33 @@ function getHotLeadsBox() {
 
 function getPlanCards() {
   return document.querySelectorAll(".price-card");
+}
+
+function getPlanActionLabel(plan) {
+  const isCurrentPlan = currentUser && currentPlan === plan && currentPlanStatus === "active";
+  if (isCurrentPlan) {
+    return currentLang === "en" ? "Current plan" : "Plano atual";
+  }
+  if (plan === "starter") {
+    return currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
+  }
+  return currentLang === "en" ? "Subscribe Pro" : "Assinar Pro";
+}
+
+function syncPlanButtons() {
+  if (starterBtn) {
+    const isCurrentStarter = !!(currentUser && currentPlan === "starter" && currentPlanStatus === "active");
+    starterBtn.textContent = getPlanActionLabel("starter");
+    starterBtn.disabled = isCurrentStarter || checkoutInFlight;
+    starterBtn.classList.toggle("is-current-plan", isCurrentStarter);
+  }
+
+  if (proBtn) {
+    const isCurrentPro = !!(currentUser && currentPlan === "pro" && currentPlanStatus === "active");
+    proBtn.textContent = getPlanActionLabel("pro");
+    proBtn.disabled = isCurrentPro || checkoutInFlight;
+    proBtn.classList.toggle("is-current-plan", isCurrentPro);
+  }
 }
 
 function markRecommendedPlans() {
@@ -4262,6 +4299,8 @@ async function fetchAdminMine() {
   try {
     if (!currentAccessToken) {
       console.warn("fetchAdminMine: sem token");
+      isAdminUser = false;
+      toggleAdminSection();
       return null;
     }
 
@@ -4273,11 +4312,13 @@ async function fetchAdminMine() {
       }
     });
 
-    if (res.status === 403) {
+    if (res.status === 401 || res.status === 403) {
       console.log("Usuário não é admin");
+      isAdminUser = false;
+      toggleAdminSection();
 
       currentPlan = currentPlan || "free";
-      currentPlanStatus = currentPlanStatus || "active";
+      currentPlanStatus = currentPlanStatus || "inactive";
 
       if (typeof updatePlanUI === "function") {
         updatePlanUI();
@@ -4288,6 +4329,8 @@ async function fetchAdminMine() {
 
     if (!res.ok) {
       console.warn("fetchAdminMine erro:", res.status);
+      isAdminUser = false;
+      toggleAdminSection();
       return null;
     }
 
@@ -4295,16 +4338,16 @@ async function fetchAdminMine() {
 
     if (data?.plan) currentPlan = data.plan;
     if (data?.status) currentPlanStatus = data.status;
+    isAdminUser = !!(data?.isAdmin || data?.is_admin);
 
     if (typeof updatePlanUI === "function") {
       updatePlanUI();
     }
 
-    if (data?.is_admin) {
-      console.log("Admin detectado");
+    toggleAdminSection();
 
-      const adminSection = document.getElementById("adminSection");
-      if (adminSection) adminSection.classList.remove("hidden");
+    if (isAdminUser) {
+      console.log("Admin detectado");
 
       if (typeof loadAdminDashboard === "function") {
         loadAdminDashboard();
@@ -4318,6 +4361,8 @@ async function fetchAdminMine() {
     return data;
   } catch (err) {
     console.error("fetchAdminMine crash:", err.message);
+    isAdminUser = false;
+    toggleAdminSection();
     return null;
   }
 }

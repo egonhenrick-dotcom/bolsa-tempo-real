@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bolsa Tempo Real Pro</title>
+  <title>Bolsa SaaS Pro - Nível 8</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -21,8 +21,8 @@
   <div class="container">
     <header class="top-header">
       <div>
-        <h1>Bolsa SaaS Pro</h1>
-        <p>Painel de mercado com autenticação, planos e dashboard</p>
+        <h1>Bolsa Tempo Real Pro</h1>
+        <p>Descubra sinais de compra e venda antes do mercado.</p>
       </div>
       <div class="user-side">
         <div id="planBadge" class="plan-badge">Plano: Free</div>
@@ -32,17 +32,13 @@
       </div>
     </header>
 <section class="hero-sales">
-      <div class="hero-kicker-row">
-        <span class="hero-kicker-pill">Mercado em tempo real</span>
-        <span class="hero-kicker-pill hero-kicker-pill-soft">Monetização pronta</span>
-      </div>
-      <h2>Transforme análise em assinatura recorrente</h2>
-      <p>Entregue valor real com plano grátis para entrada, Starter para retenção e Pro para recursos premium que o usuário percebe na hora.</p>
+      <h2>Ganhe vantagem no mercado antes dos outros</h2>
+      <p>Descubra sinais de compra e venda mais rápido, com dados em tempo real e uma experiência mais profissional.</p>
       <div class="hero-buttons">
-        <button onclick="scrollToPlans()" class="cta-primary" type="button">Ver planos agora</button>
-        <button onclick="handleSearch()" class="cta-secondary" type="button">Testar versão grátis</button>
+        <button onclick="scrollToPlans()" class="cta-primary" type="button">Começar agora</button>
+        <button onclick="handleSearch()" class="cta-secondary" type="button">Testar grátis</button>
       </div>
-      <div class="social-proof">🔥 Estrutura pronta para captar, converter e fazer upgrade dentro do próprio painel</div>
+      <div class="social-proof">🔥 +1.000 usuários analisando o mercado todos os dias</div>
     </section>
 
     <section class="hero-grid">
@@ -90,56 +86,19 @@
           <span>Checkout via Stripe</span>
         </div>
 
-        <div class="plan-strip">
-          <div class="plan-strip-item"><strong>Grátis</strong><span>entrada e prova de valor</span></div>
-          <div class="plan-strip-item"><strong>Starter</strong><span>primeira conversão</span></div>
-          <div class="plan-strip-item"><strong>Pro</strong><span>ticket maior e recursos premium</span></div>
-        </div>
-
         <div class="pricing-grid">
-          <div class="price-card" data-plan="starter">
-            <div class="plan-card-topline">Mais fácil de converter</div>
+          <div class="price-card">
             <h3>Starter</h3>
             <div class="price">R$ 29<span>/mês</span></div>
-            <p>Perfeito para tirar o usuário do grátis e colocar ele em uso recorrente.</p>
-            <ul class="plan-feature-list">
-              <li>Favoritos sincronizados</li>
-              <li>Mais análises por dia</li>
-              <li>Atualização automática</li>
-              <li>Watchlist e notícias sem bloqueio</li>
-            </ul>
-            <div class="plan-note">Entrada ideal para validar pagamento recorrente.</div>
+            <p>Ideal para acompanhar o mercado com mais precisão e sem limites básicos.</p>
             <button id="starterBtn" type="button">Assinar Starter</button>
           </div>
 
-          <div class="price-card featured" data-plan="pro">
-            <div class="plan-card-topline">Maior percepção de valor</div>
+          <div class="price-card featured">
             <h3>Pro</h3>
             <div class="price">R$ 79<span>/mês</span></div>
-            <p>Plano premium para quem quer comparação, carteira e uso profissional.</p>
-            <ul class="plan-feature-list">
-              <li>Comparação entre ativos</li>
-              <li>Carteira com resumo completo</li>
-              <li>Análises ilimitadas</li>
-              <li>Atualização mais rápida</li>
-            </ul>
-            <div class="plan-note">Plano recomendado para quem já sentiu valor no produto.</div>
+            <p>Para quem quer tomar decisões com vantagem real no mercado.</p>
             <button id="proBtn" type="button">Assinar Pro</button>
-          </div>
-        </div>
-
-        <div class="plan-compare-grid">
-          <div class="plan-compare-card">
-            <strong>Free</strong>
-            <span>Entrada para captar lead</span>
-          </div>
-          <div class="plan-compare-card">
-            <strong>Starter</strong>
-            <span>Monetiza favoritos e uso recorrente</span>
-          </div>
-          <div class="plan-compare-card">
-            <strong>Pro</strong>
-            <span>Monetiza comparação, carteira e prioridade</span>
           </div>
         </div>
       </div>
@@ -308,7 +267,7 @@
     <!-- ========================= -->
     <!-- NÍVEL 8 ADMIN PANEL -->
     <!-- ========================= -->
-    <section id="adminSection" class="card hidden">
+    <section id="adminSection" class="card hidden" style="display:none;" aria-hidden="true">
       <div class="section-title-row">
         <h3>🛠 Painel Admin</h3>
         <span id="adminStatus">Aguardando dados...</span>

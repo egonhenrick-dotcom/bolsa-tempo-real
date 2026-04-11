@@ -309,13 +309,11 @@ function getCheckoutPlanConfig(plan) {
   const plans = {
     starter: {
       plan: "starter",
-      priceId: process.env.STRIPE_PRICE_STARTER || "",
-      trialDays: Math.max(0, Number(process.env.STRIPE_TRIAL_DAYS_STARTER || 0))
+      priceId: process.env.STRIPE_PRICE_STARTER || ""
     },
     pro: {
       plan: "pro",
-      priceId: process.env.STRIPE_PRICE_PRO || "",
-      trialDays: Math.max(0, Number(process.env.STRIPE_TRIAL_DAYS_PRO || 0))
+      priceId: process.env.STRIPE_PRICE_PRO || ""
     }
   };
 
@@ -1820,33 +1818,34 @@ app.post("/api/create-checkout-session", createRateLimiter({ windowMs: 60 * 1000
       eventData: { plan: checkoutPlan.plan }
     });
 
-    const session = await stripe.checkout.sessions.create({
+    const trialDaysRaw = Number(
+      checkoutPlan.plan === "pro"
+        ? process.env.STRIPE_TRIAL_DAYS_PRO || 0
+        : process.env.STRIPE_TRIAL_DAYS_STARTER || 0
+    );
+    const trialDays = Number.isFinite(trialDaysRaw) && trialDaysRaw > 0 ? Math.floor(trialDaysRaw) : 0;
+
+    const sessionPayload = {
       mode: "subscription",
       payment_method_types: ["card"],
-      line_items: [{ price: checkoutPlan.priceId, quantity: 1 }],
       allow_promotion_codes: true,
-      success_url: `${APP_URL}/?checkout=success&plan=${checkoutPlan.plan}`,
-      cancel_url: `${APP_URL}/?checkout=cancel&plan=${checkoutPlan.plan}`,
+      line_items: [{ price: checkoutPlan.priceId, quantity: 1 }],
+      success_url: `${APP_URL}/?checkout=success`,
+      cancel_url: `${APP_URL}/?checkout=cancel`,
       customer_email: req.user.email,
       metadata: {
         user_id: req.user.id,
         plan: checkoutPlan.plan
-      },
-      subscription_data: checkoutPlan.trialDays > 0
-        ? {
-            trial_period_days: checkoutPlan.trialDays,
-            metadata: {
-              user_id: req.user.id,
-              plan: checkoutPlan.plan
-            }
-          }
-        : {
-            metadata: {
-              user_id: req.user.id,
-              plan: checkoutPlan.plan
-            }
-          }
-    });
+      }
+    };
+
+    if (trialDays > 0) {
+      sessionPayload.subscription_data = {
+        trial_period_days: trialDays
+      };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionPayload);
 
     res.json({ url: session.url });
   } catch (error) {

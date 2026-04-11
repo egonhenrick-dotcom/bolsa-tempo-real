@@ -309,11 +309,13 @@ function getCheckoutPlanConfig(plan) {
   const plans = {
     starter: {
       plan: "starter",
-      priceId: process.env.STRIPE_PRICE_STARTER || ""
+      priceId: process.env.STRIPE_PRICE_STARTER || "",
+      trialDays: Math.max(0, Number(process.env.STRIPE_TRIAL_DAYS_STARTER || 0))
     },
     pro: {
       plan: "pro",
-      priceId: process.env.STRIPE_PRICE_PRO || ""
+      priceId: process.env.STRIPE_PRICE_PRO || "",
+      trialDays: Math.max(0, Number(process.env.STRIPE_TRIAL_DAYS_PRO || 0))
     }
   };
 
@@ -1822,13 +1824,28 @@ app.post("/api/create-checkout-session", createRateLimiter({ windowMs: 60 * 1000
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price: checkoutPlan.priceId, quantity: 1 }],
-      success_url: `${APP_URL}/?checkout=success`,
-      cancel_url: `${APP_URL}/?checkout=cancel`,
+      allow_promotion_codes: true,
+      success_url: `${APP_URL}/?checkout=success&plan=${checkoutPlan.plan}`,
+      cancel_url: `${APP_URL}/?checkout=cancel&plan=${checkoutPlan.plan}`,
       customer_email: req.user.email,
       metadata: {
         user_id: req.user.id,
         plan: checkoutPlan.plan
-      }
+      },
+      subscription_data: checkoutPlan.trialDays > 0
+        ? {
+            trial_period_days: checkoutPlan.trialDays,
+            metadata: {
+              user_id: req.user.id,
+              plan: checkoutPlan.plan
+            }
+          }
+        : {
+            metadata: {
+              user_id: req.user.id,
+              plan: checkoutPlan.plan
+            }
+          }
     });
 
     res.json({ url: session.url });

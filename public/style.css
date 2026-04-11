@@ -2428,28 +2428,125 @@ body.light-theme .market-watchlist-vertical .watch-btn.watch-btn-active {
 }
 
 
-/* =========================
-   MONETIZAÇÃO + BLINDAGEM VISUAL
-   ========================= */
-
-button.is-current-plan {
-  background: #0f172a;
-  color: #cbd5e1;
-  border: 1px solid #334155;
-  cursor: default;
-  opacity: 1;
+.hero-trust {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-button.is-current-plan:hover {
-  opacity: 1;
+.no-risk {
+  display: inline-flex;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #24406e;
+  background: rgba(10, 22, 48, 0.72);
+  color: #dce9ff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-#adminSection.hidden {
-  display: none !important;
+.plan-tag {
+  display: inline-flex;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  color: #8df0ae;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-body.light-theme button.is-current-plan {
-  background: #e2e8f0;
-  color: #334155;
-  border-color: #cbd5e1;
+.plan-copy {
+  margin-bottom: 12px;
+}
+
+.plan-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.plan-features li {
+  position: relative;
+  padding-left: 18px;
+  color: #dbe7fb;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.plan-features li::before {
+  content: "✔";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #22c55e;
+  font-weight: 700;
+}
+
+.plans-urgency {
+  margin: 14px 0 0;
+  color: #9cb1d1;
+  font-size: 14px;
+}
+
+.signal-card {
+  background: rgba(10, 22, 48, 0.92);
+  border: 1px solid #24406e;
+  border-radius: 18px;
+  padding: 16px 18px;
+  margin: 0 0 16px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.signal-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.signal-card-kicker,
+.signal-card-confidence {
+  color: #9cb1d1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.signal-status {
+  font-size: 26px;
+  font-weight: 800;
+  margin: 8px 0;
+}
+
+.signal-status.buy { color: #22c55e; }
+.signal-status.sell { color: #ef4444; }
+.signal-status.neutral { color: #facc15; }
+
+.signal-reason {
+  margin: 0;
+  color: #c9d8f2;
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+body.light-theme .no-risk,
+body.light-theme .signal-card,
+body.light-theme .plan-features li,
+body.light-theme .plans-urgency,
+body.light-theme .signal-card-kicker,
+body.light-theme .signal-card-confidence,
+body.light-theme .signal-reason {
+  color: #0f172a;
+}
+
+body.light-theme .no-risk,
+body.light-theme .signal-card {
+  background: #ffffff;
+  border-color: #c9d7ee;
 }

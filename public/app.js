@@ -99,13 +99,14 @@ const translations = {
     qty: "Qty",
     avg: "Avg",
     remove: "Remove",
-    watchlistNewsChart: "Ideal for tracking the market with more precision and without basic limits.",
-    premiumDesc: "For those who want to make decisions with a real advantage in the market.",
-    heroTitle: "Gain an advantage in the market before others",
-    heroText: "Discover buy and sell signals faster, with real-time data and a more professional workflow.",
-    heroStart: "Start now",
+    watchlistNewsChart: "Ideal for following the market with more precision and fewer limits.",
+    premiumDesc: "For those who want real advantage with stronger signals and premium tools.",
+    heroTitle: "Discover when to buy and sell with more clarity",
+    heroText: "Get fast market readings to make better decisions without relying on confusing charts.",
+    heroStart: "Start free now",
     heroTry: "Try for free",
-    heroProof: "🔥 +1,000 users analyzing the market every day",
+    heroProof: "🔥 More than 1,000 users already analyze the market here every day",
+    heroRiskFree: "No risk • cancel anytime",
     favorited: "★ Favorited",
     favorite: "⭐ Favorite",
     loginToSyncFavorites: "Login to sync favorites.",
@@ -201,13 +202,14 @@ const translations = {
     qty: "Qtd",
     avg: "PM",
     remove: "Remover",
-    watchlistNewsChart: "Ideal para acompanhar o mercado com mais precisão e sem limites básicos.",
-    premiumDesc: "Para quem quer tomar decisões com vantagem real no mercado.",
-    heroTitle: "Ganhe vantagem no mercado antes dos outros",
-    heroText: "Descubra sinais de compra e venda mais rápido, com dados em tempo real e fluxo mais profissional.",
-    heroStart: "Começar agora",
+    watchlistNewsChart: "Ideal para acompanhar o mercado com mais precisão e sem os limites básicos.",
+    premiumDesc: "Para quem quer tomar decisões com vantagem real e ferramentas premium.",
+    heroTitle: "Descubra quando comprar e vender ações com mais clareza",
+    heroText: "Receba leituras rápidas do mercado para decidir melhor, sem depender de gráficos confusos.",
+    heroStart: "Começar grátis agora",
     heroTry: "Testar grátis",
-    heroProof: "🔥 +1.000 usuários analisando o mercado todos os dias",
+    heroProof: "🔥 Mais de 1.000 usuários já analisam o mercado aqui todos os dias",
+    heroRiskFree: "Sem risco • cancele quando quiser",
     favorited: "★ Favoritado",
     favorite: "⭐ Favoritar",
     loginToSyncFavorites: "Faça login para sincronizar favoritos.",
@@ -1198,23 +1200,12 @@ function updatePlanUI() {
   if (!currentUser) {
     if (userBadge) userBadge.textContent = t("visitor");
     if (signOutBtn) signOutBtn.classList.add("hidden");
-    if (logoutTopBtn) {
-      logoutTopBtn.classList.add("hidden");
-      logoutTopBtn.disabled = false;
-      logoutTopBtn.textContent = t("logout");
-    }
     if (portfolioSection) portfolioSection.classList.add("hidden");
-    syncPlanButtons();
     return;
   }
 
   if (userBadge) userBadge.textContent = currentUser.email || "Usuário";
   if (signOutBtn) signOutBtn.classList.remove("hidden");
-  if (logoutTopBtn) {
-    logoutTopBtn.classList.remove("hidden");
-    logoutTopBtn.disabled = false;
-    logoutTopBtn.textContent = t("logout");
-  }
 
   if (currentPlan === "pro" && currentPlanStatus === "active") {
     if (portfolioSection) portfolioSection.classList.remove("hidden");
@@ -1223,8 +1214,6 @@ function updatePlanUI() {
     if (portfolioSection) portfolioSection.classList.add("hidden");
     if (portfolioStatus) portfolioStatus.textContent = t("portfolioLocked");
   }
-
-  syncPlanButtons();
 }
 
 function renderFavorites() {
@@ -2039,6 +2028,55 @@ function buildAnalysisSnapshot(symbol, quote, candles, news = [], profile = {}) 
   };
 }
 
+
+function getSignalUiBySnapshot(snapshot = latestAnalysisSnapshot) {
+  if (!snapshot) {
+    return {
+      statusClass: "neutral",
+      statusText: currentLang === "en" ? "🟡 Waiting for analysis" : "🟡 Aguardando análise",
+      confidenceText: currentLang === "en" ? "Waiting for asset" : "Aguardando ativo",
+      reasonText: currentLang === "en"
+        ? "Based on trend, move strength and market reading."
+        : "Baseado em tendência, força do movimento e leitura do mercado."
+    };
+  }
+
+  let statusClass = "neutral";
+  let statusText = currentLang === "en" ? "🟡 Wait" : "🟡 Aguardar";
+
+  if (snapshot.score >= 70) {
+    statusClass = "buy";
+    statusText = currentLang === "en" ? "🟢 Strong buy signal" : "🟢 Sinal de compra forte";
+  } else if (snapshot.score <= 39) {
+    statusClass = "sell";
+    statusText = currentLang === "en" ? "🔴 Sell / avoid" : "🔴 Venda / evitar";
+  }
+
+  return {
+    statusClass,
+    statusText,
+    confidenceText: `${snapshot.symbol} • ${currentLang === "en" ? "Score" : "Score"} ${snapshot.score}/100`,
+    reasonText: `${snapshot.readingLine} • ${snapshot.trendLabel} • ${snapshot.strength}`
+  };
+}
+
+function renderSignalCard(snapshot = latestAnalysisSnapshot) {
+  const card = document.getElementById("signalCard");
+  if (!card) return;
+
+  const statusEl = document.getElementById("signalStatus");
+  const confidenceEl = document.getElementById("signalConfidence");
+  const reasonEl = document.getElementById("signalReason");
+  const signalUi = getSignalUiBySnapshot(snapshot);
+
+  if (statusEl) {
+    statusEl.className = `signal-status ${signalUi.statusClass}`;
+    statusEl.textContent = signalUi.statusText;
+  }
+  if (confidenceEl) confidenceEl.textContent = signalUi.confidenceText;
+  if (reasonEl) reasonEl.textContent = signalUi.reasonText;
+}
+
 function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
   const panel = document.querySelector(".analysis-hero-right");
   if (!panel) return;
@@ -2099,6 +2137,7 @@ function renderOverview(quote, snapshot = latestAnalysisSnapshot) {
   marketOverview.innerHTML = smartCards;
   updateAnalysisHero(quote, currentSymbol);
   renderSmartPremiumPanel(snapshot);
+  renderSignalCard(snapshot);
 }
 
 function escapeRegExp(value) {
@@ -3102,18 +3141,31 @@ function applyTranslations() {
   const priceCards = document.querySelectorAll(".price-card");
   if (priceCards[0]) {
     const h3 = priceCards[0].querySelector("h3");
-    const p = priceCards[0].querySelector("p");
+    const p = priceCards[0].querySelector(".plan-copy");
+    const features = priceCards[0].querySelectorAll(".plan-features li");
     if (h3) h3.textContent = t("starter");
     if (p) p.textContent = t("watchlistNewsChart");
+    if (features[0]) features[0].textContent = currentLang === "en" ? "Data without visible delay" : "Dados sem atraso visível";
+    if (features[1]) features[1].textContent = currentLang === "en" ? "More analyses per day" : "Mais análises por dia";
+    if (features[2]) features[2].textContent = currentLang === "en" ? "Watchlist, favorites and news" : "Watchlist, favoritos e notícias";
+    if (features[3]) features[3].textContent = currentLang === "en" ? "Full chart to follow the asset" : "Gráfico completo para acompanhar o ativo";
   }
   if (priceCards[1]) {
     const h3 = priceCards[1].querySelector("h3");
-    const p = priceCards[1].querySelector("p");
+    const p = priceCards[1].querySelector(".plan-copy");
+    const features = priceCards[1].querySelectorAll(".plan-features li");
+    const planTag = priceCards[1].querySelector(".plan-tag");
     if (h3) h3.textContent = t("pro");
     if (p) p.textContent = t("premiumDesc");
+    if (planTag) planTag.textContent = currentLang === "en" ? "Most chosen" : "Mais escolhido";
+    if (features[0]) features[0].textContent = currentLang === "en" ? "Automatic buy and sell signals" : "Sinais automáticos de compra e venda";
+    if (features[1]) features[1].textContent = currentLang === "en" ? "Asset comparison" : "Comparação de ativos";
+    if (features[2]) features[2].textContent = currentLang === "en" ? "Pro portfolio and unlimited analyses" : "Carteira Pro e análises ilimitadas";
+    if (features[3]) features[3].textContent = currentLang === "en" ? "Priority on readings and premium features" : "Prioridade nas leituras e recursos premium";
   }
 
-  syncPlanButtons();
+  if (starterBtn) starterBtn.textContent = currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
+  if (proBtn) proBtn.textContent = currentLang === "en" ? "Subscribe Pro" : "Assinar Pro";
 
   if (symbolInput) symbolInput.placeholder = t("symbolPlaceholder");
   if (compareInput) compareInput.placeholder = t("comparePlaceholder");
@@ -3173,6 +3225,9 @@ function applyTranslations() {
   if (heroBtns[0]) heroBtns[0].textContent = t("heroStart");
   if (heroBtns[1]) heroBtns[1].textContent = t("heroTry");
   if (heroProof) heroProof.textContent = t("heroProof");
+  const heroRisk = document.querySelector(".no-risk");
+  if (heroRisk) heroRisk.textContent = t("heroRiskFree");
+  renderSignalCard(latestAnalysisSnapshot);
 
   updateFavoriteButton();
   renderFavorites();
@@ -3506,9 +3561,11 @@ function toggleAdminSection() {
   const adminSection = getAdminSection();
   if (!adminSection) return;
 
-  const shouldShow = !!(isAdminUser && currentUser);
-  adminSection.classList.toggle("hidden", !shouldShow);
-  adminSection.style.display = shouldShow ? "" : "none";
+  if (isAdminUser && currentUser) {
+    adminSection.classList.remove("hidden");
+  } else {
+    adminSection.classList.add("hidden");
+  }
 
   showDiagnosticsForAdminOnly();
 }
@@ -3677,33 +3734,6 @@ function getHotLeadsBox() {
 
 function getPlanCards() {
   return document.querySelectorAll(".price-card");
-}
-
-function getPlanActionLabel(plan) {
-  const isCurrentPlan = currentUser && currentPlan === plan && currentPlanStatus === "active";
-  if (isCurrentPlan) {
-    return currentLang === "en" ? "Current plan" : "Plano atual";
-  }
-  if (plan === "starter") {
-    return currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
-  }
-  return currentLang === "en" ? "Subscribe Pro" : "Assinar Pro";
-}
-
-function syncPlanButtons() {
-  if (starterBtn) {
-    const isCurrentStarter = !!(currentUser && currentPlan === "starter" && currentPlanStatus === "active");
-    starterBtn.textContent = getPlanActionLabel("starter");
-    starterBtn.disabled = isCurrentStarter || checkoutInFlight;
-    starterBtn.classList.toggle("is-current-plan", isCurrentStarter);
-  }
-
-  if (proBtn) {
-    const isCurrentPro = !!(currentUser && currentPlan === "pro" && currentPlanStatus === "active");
-    proBtn.textContent = getPlanActionLabel("pro");
-    proBtn.disabled = isCurrentPro || checkoutInFlight;
-    proBtn.classList.toggle("is-current-plan", isCurrentPro);
-  }
 }
 
 function markRecommendedPlans() {
@@ -4299,8 +4329,6 @@ async function fetchAdminMine() {
   try {
     if (!currentAccessToken) {
       console.warn("fetchAdminMine: sem token");
-      isAdminUser = false;
-      toggleAdminSection();
       return null;
     }
 
@@ -4312,13 +4340,11 @@ async function fetchAdminMine() {
       }
     });
 
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 403) {
       console.log("Usuário não é admin");
-      isAdminUser = false;
-      toggleAdminSection();
 
       currentPlan = currentPlan || "free";
-      currentPlanStatus = currentPlanStatus || "inactive";
+      currentPlanStatus = currentPlanStatus || "active";
 
       if (typeof updatePlanUI === "function") {
         updatePlanUI();
@@ -4329,8 +4355,6 @@ async function fetchAdminMine() {
 
     if (!res.ok) {
       console.warn("fetchAdminMine erro:", res.status);
-      isAdminUser = false;
-      toggleAdminSection();
       return null;
     }
 
@@ -4338,16 +4362,16 @@ async function fetchAdminMine() {
 
     if (data?.plan) currentPlan = data.plan;
     if (data?.status) currentPlanStatus = data.status;
-    isAdminUser = !!(data?.isAdmin || data?.is_admin);
 
     if (typeof updatePlanUI === "function") {
       updatePlanUI();
     }
 
-    toggleAdminSection();
-
-    if (isAdminUser) {
+    if (data?.is_admin) {
       console.log("Admin detectado");
+
+      const adminSection = document.getElementById("adminSection");
+      if (adminSection) adminSection.classList.remove("hidden");
 
       if (typeof loadAdminDashboard === "function") {
         loadAdminDashboard();
@@ -4361,8 +4385,6 @@ async function fetchAdminMine() {
     return data;
   } catch (err) {
     console.error("fetchAdminMine crash:", err.message);
-    isAdminUser = false;
-    toggleAdminSection();
     return null;
   }
 }

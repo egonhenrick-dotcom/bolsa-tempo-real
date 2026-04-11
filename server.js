@@ -1818,17 +1818,9 @@ app.post("/api/create-checkout-session", createRateLimiter({ windowMs: 60 * 1000
       eventData: { plan: checkoutPlan.plan }
     });
 
-    const trialDaysRaw = Number(
-      checkoutPlan.plan === "pro"
-        ? process.env.STRIPE_TRIAL_DAYS_PRO || 0
-        : process.env.STRIPE_TRIAL_DAYS_STARTER || 0
-    );
-    const trialDays = Number.isFinite(trialDaysRaw) && trialDaysRaw > 0 ? Math.floor(trialDaysRaw) : 0;
-
-    const sessionPayload = {
+    const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
-      allow_promotion_codes: true,
       line_items: [{ price: checkoutPlan.priceId, quantity: 1 }],
       success_url: `${APP_URL}/?checkout=success`,
       cancel_url: `${APP_URL}/?checkout=cancel`,
@@ -1837,15 +1829,7 @@ app.post("/api/create-checkout-session", createRateLimiter({ windowMs: 60 * 1000
         user_id: req.user.id,
         plan: checkoutPlan.plan
       }
-    };
-
-    if (trialDays > 0) {
-      sessionPayload.subscription_data = {
-        trial_period_days: trialDays
-      };
-    }
-
-    const session = await stripe.checkout.sessions.create(sessionPayload);
+    });
 
     res.json({ url: session.url });
   } catch (error) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bolsa SaaS Pro - Nível 8</title>
+  <title>Bolsa Tempo Real Pro</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -12,17 +12,17 @@
 
 <div id="upgradeBanner" class="upgrade-banner hidden">
   <div class="upgrade-banner-text">
-    <strong class="upgrade-banner-title">Desbloqueie todos os recursos com o plano Pro</strong>
-    <span class="upgrade-banner-subtitle">Mais análises, mais recursos e mais velocidade para decidir.</span>
+    <strong class="upgrade-banner-title">Desbloqueie análises ilimitadas e sinais em tempo real</strong>
+    <span class="upgrade-banner-subtitle">Saia do modo básico e tome decisões com mais confiança.</span>
   </div>
-  <button type="button" class="upgrade-banner-btn">Ver planos</button>
+  <button type="button" class="upgrade-banner-btn">Ver plano Pro</button>
 </div>
 
   <div class="container">
     <header class="top-header">
       <div>
         <h1>Bolsa Tempo Real Pro</h1>
-        <p>Descubra sinais de compra e venda antes do mercado.</p>
+        <p>Descubra sinais de compra e venda com mais clareza no mercado.</p>
       </div>
       <div class="user-side">
         <div id="planBadge" class="plan-badge">Plano: Free</div>
@@ -32,13 +32,16 @@
       </div>
     </header>
 <section class="hero-sales">
-      <h2>Ganhe vantagem no mercado antes dos outros</h2>
-      <p>Descubra sinais de compra e venda mais rápido, com dados em tempo real e uma experiência mais profissional.</p>
+      <h2>Descubra quando comprar e vender ações com mais clareza</h2>
+      <p>Receba leituras rápidas do mercado para decidir melhor, sem depender de gráficos confusos.</p>
       <div class="hero-buttons">
-        <button onclick="scrollToPlans()" class="cta-primary" type="button">Começar agora</button>
+        <button onclick="scrollToPlans()" class="cta-primary" type="button">Começar grátis agora</button>
         <button onclick="handleSearch()" class="cta-secondary" type="button">Testar grátis</button>
       </div>
-      <div class="social-proof">🔥 +1.000 usuários analisando o mercado todos os dias</div>
+      <div class="hero-trust">
+        <span class="no-risk">Sem risco • cancele quando quiser</span>
+        <div class="social-proof">🔥 +1.000 usuários analisando o mercado todos os dias</div>
+      </div>
     </section>
 
     <section class="hero-grid">
@@ -90,17 +93,31 @@
           <div class="price-card">
             <h3>Starter</h3>
             <div class="price">R$ 29<span>/mês</span></div>
-            <p>Ideal para acompanhar o mercado com mais precisão e sem limites básicos.</p>
+            <p class="plan-copy">Ideal para quem quer acompanhar o mercado com mais precisão e sem os limites básicos.</p>
+            <ul class="plan-features">
+              <li>Dados sem atraso visível</li>
+              <li>Mais análises por dia</li>
+              <li>Watchlist, favoritos e notícias</li>
+              <li>Gráfico completo para acompanhar o ativo</li>
+            </ul>
             <button id="starterBtn" type="button">Assinar Starter</button>
           </div>
 
           <div class="price-card featured">
+            <div class="plan-tag">Mais escolhido</div>
             <h3>Pro</h3>
             <div class="price">R$ 79<span>/mês</span></div>
-            <p>Para quem quer tomar decisões com vantagem real no mercado.</p>
+            <p class="plan-copy">Para quem quer tomar decisões com vantagem real no mercado.</p>
+            <ul class="plan-features">
+              <li>Sinais automáticos de compra e venda</li>
+              <li>Comparação de ativos</li>
+              <li>Carteira Pro e análises ilimitadas</li>
+              <li>Prioridade nas leituras e recursos premium</li>
+            </ul>
             <button id="proBtn" type="button">Assinar Pro</button>
           </div>
         </div>
+        <p class="plans-urgency">🔥 Mais de 1.000 usuários já estão usando a plataforma para analisar o mercado.</p>
       </div>
     </section>
 
@@ -176,6 +193,15 @@
               <span class="analysis-hero-subcaption">Layout inspirado em plataforma profissional</span>
             </div>
           </div>
+        </section>
+
+        <section id="signalCard" class="signal-card">
+          <div class="signal-card-top">
+            <span class="signal-card-kicker">📊 Sinal do mercado</span>
+            <span id="signalConfidence" class="signal-card-confidence">Aguardando ativo</span>
+          </div>
+          <div id="signalStatus" class="signal-status neutral">🟡 Aguardando análise</div>
+          <p id="signalReason" class="signal-reason">Baseado em tendência, força do movimento e leitura do mercado.</p>
         </section>
 
         <section class="analysis-layout">
@@ -267,7 +293,7 @@
     <!-- ========================= -->
     <!-- NÍVEL 8 ADMIN PANEL -->
     <!-- ========================= -->
-    <section id="adminSection" class="card hidden" style="display:none;" aria-hidden="true">
+    <section id="adminSection" class="card hidden">
       <div class="section-title-row">
         <h3>🛠 Painel Admin</h3>
         <span id="adminStatus">Aguardando dados...</span>

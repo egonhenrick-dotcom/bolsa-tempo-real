@@ -41,6 +41,7 @@ let lastRenderedTimeframe = "";
 let lastChartInteractionAt = 0;
 const CHART_INTERACTION_GUARD_MS = 12000;
 const AUTH_SYNC_EVENT_KEY = "bolsa-auth-sync-event";
+let initialPreviewBooted = false;
 
 const translations = {
   en: {
@@ -770,6 +771,39 @@ function clearAnalysisUI() {
   setStatus(t("typeTicker"));
   syncActiveMarketButtons();
   updateAnalysisControlButton();
+  bootstrapDefaultPreview();
+}
+
+function bootstrapDefaultPreview(force = false) {
+  if (initialPreviewBooted && !force) return;
+  initialPreviewBooted = true;
+
+  const defaultSymbol = (localStorage.getItem("defaultPreviewSymbol") || "AAPL").trim().toUpperCase() || "AAPL";
+
+  if (symbolInput) {
+    symbolInput.value = defaultSymbol;
+  }
+
+  if (compareInput && !currentUser) {
+    compareInput.value = "";
+  }
+
+  if (chartCard) chartCard.classList.remove("hidden");
+
+  setTimeout(() => {
+    handleSearch(false).catch((error) => {
+      console.error("Falha ao iniciar preview padrão:", error?.message || error);
+      initialPreviewBooted = false;
+      if (chart) {
+        chart.innerHTML = `
+          <div class="chart-teaser">
+            <strong>${currentLang === "en" ? "Live chart ready to preview" : "Gráfico ao vivo pronto para visualizar"}</strong>
+            <p>${currentLang === "en" ? "Analyze any ticker to see the chart. Login only when you want to save favorites, compare assets or unlock unlimited analyses." : "Analise qualquer ticker para ver o gráfico. Faça login apenas quando quiser salvar favoritos, comparar ativos ou liberar análises ilimitadas."}</p>
+          </div>
+        `;
+      }
+    });
+  }, 280);
 }
 
 function getAccessToken() {
@@ -1197,6 +1231,8 @@ function updateFavoriteButton() {
 }
 
 function updatePlanUI() {
+  protectPublicUiShell();
+
   const planName =
     currentPlan === "pro" ? "Pro" :
     currentPlan === "starter" ? "Starter" :
@@ -3659,7 +3695,16 @@ function updateUsageUI(data) {
   toggleAdminSection();
 }
 
+function protectPublicUiShell() {
+  if (!currentUser) {
+    if (logoutTopBtn) logoutTopBtn.classList.add("hidden");
+    const adminSection = getAdminSection();
+    if (adminSection) adminSection.classList.add("hidden");
+  }
+}
+
 function toggleAdminSection() {
+  protectPublicUiShell();
   const adminSection = getAdminSection();
   if (!adminSection) return;
 
@@ -4471,9 +4516,8 @@ async function fetchAdminMine() {
 
     if (data?.is_admin) {
       console.log("Admin detectado");
-
-      const adminSection = document.getElementById("adminSection");
-      if (adminSection) adminSection.classList.remove("hidden");
+      isAdminUser = true;
+      toggleAdminSection();
 
       if (typeof loadAdminDashboard === "function") {
         loadAdminDashboard();
@@ -4482,6 +4526,9 @@ async function fetchAdminMine() {
       if (typeof loadAdminUsers === "function") {
         loadAdminUsers();
       }
+    } else {
+      isAdminUser = false;
+      toggleAdminSection();
     }
 
     return data;

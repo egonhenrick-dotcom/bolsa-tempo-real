@@ -2428,160 +2428,153 @@ body.light-theme .market-watchlist-vertical .watch-btn.watch-btn-active {
 }
 
 
-.hero-trust {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.no-risk {
-  display: inline-flex;
-  width: fit-content;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid #24406e;
-  background: rgba(10, 22, 48, 0.72);
-  color: #dce9ff;
+.hero-risk-free {
+  margin-bottom: 10px;
+  color: #86efac;
   font-size: 13px;
   font-weight: 700;
 }
 
-.plan-tag {
+.plan-feature-list {
+  margin: 10px 0 14px;
+  padding-left: 18px;
+  color: #c8d8f2;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.plan-feature-list li + li {
+  margin-top: 4px;
+}
+
+.best-choice-badge {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: 10px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(34, 197, 94, 0.16);
-  border: 1px solid rgba(34, 197, 94, 0.5);
-  color: #8df0ae;
-  font-size: 12px;
-  font-weight: 700;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #86efac;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
-.plan-copy {
-  margin-bottom: 12px;
-}
-
-.plan-features {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 16px;
-  display: grid;
-  gap: 8px;
-}
-
-.plan-features li {
-  position: relative;
-  padding-left: 18px;
-  color: #dbe7fb;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.plan-features li::before {
-  content: "✔";
-  position: absolute;
-  left: 0;
-  top: 0;
-  color: #22c55e;
-  font-weight: 700;
-}
-
-.plans-urgency {
-  margin: 14px 0 0;
-  color: #9cb1d1;
-  font-size: 14px;
-}
-
-.signal-card {
-  background: rgba(10, 22, 48, 0.92);
-  border: 1px solid #24406e;
-  border-radius: 18px;
+.market-signal-card {
+  margin: 14px 0 10px;
   padding: 16px 18px;
-  margin: 0 0 16px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(8, 20, 45, 0.98), rgba(6, 16, 38, 0.98));
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  box-shadow: 0 14px 34px rgba(2, 6, 23, 0.28);
 }
 
-.signal-card-top {
+.market-signal-top {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   margin-bottom: 10px;
-  flex-wrap: wrap;
 }
 
-.signal-card-kicker,
-.signal-card-confidence {
-  color: #9cb1d1;
-  font-size: 13px;
-  font-weight: 700;
+.market-signal-kicker,
+.market-signal-symbol {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #93c5fd;
 }
 
-.signal-status {
+.market-signal-label {
+  display: block;
   font-size: 26px;
   font-weight: 800;
-  margin: 8px 0;
+  line-height: 1.15;
+  margin-bottom: 8px;
 }
 
-.signal-status.buy { color: #22c55e; }
-.signal-status.sell { color: #ef4444; }
-.signal-status.neutral { color: #facc15; }
+.market-signal-label.buy { color: #22c55e; }
+.market-signal-label.sell { color: #ef4444; }
+.market-signal-label.neutral { color: #facc15; }
 
-.signal-reason {
-  margin: 0;
-  color: #c9d8f2;
-  line-height: 1.5;
+.market-signal-text {
+  margin: 0 0 8px;
+  color: #dce9ff;
   font-size: 14px;
 }
 
-body.light-theme .no-risk,
-body.light-theme .signal-card,
-body.light-theme .plan-features li,
-body.light-theme .plans-urgency,
-body.light-theme .signal-card-kicker,
-body.light-theme .signal-card-confidence,
-body.light-theme .signal-reason {
+.market-signal-warning {
+  margin: 0 0 12px;
+  color: #facc15;
+  font-size: 13px;
+}
+
+.market-signal-btn {
+  min-height: 42px;
+}
+
+.chart-teaser {
+  display: grid;
+  gap: 8px;
+  place-items: center;
+  min-height: 380px;
+  text-align: center;
+  color: #dce9ff;
+  padding: 20px;
+}
+
+.chart-teaser strong {
+  font-size: 20px;
+}
+
+.chart-teaser p {
+  margin: 0;
+  max-width: 560px;
+  color: #9cb1d1;
+  line-height: 1.55;
+}
+
+.chart-teaser .neutral-btn {
+  min-height: 42px;
+}
+
+body.light-theme .hero-risk-free {
+  color: #15803d;
+}
+
+body.light-theme .plan-feature-list {
+  color: #334155;
+}
+
+body.light-theme .market-signal-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  border-color: rgba(59, 130, 246, 0.18);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+body.light-theme .market-signal-text {
   color: #0f172a;
 }
 
-body.light-theme .no-risk,
-body.light-theme .signal-card {
-  background: #ffffff;
-  border-color: #c9d7ee;
+body.light-theme .chart-teaser {
+  color: #0f172a;
 }
 
-
-.signal-cta-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-}
-
-.signal-upgrade-btn {
-  min-height: 42px;
-  padding: 0 18px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-  color: #03140a;
-  font-weight: 800;
-  box-shadow: 0 10px 24px rgba(34, 197, 94, 0.22);
-}
-
-.signal-upgrade-btn:disabled {
-  opacity: 0.7;
-  cursor: default;
-}
-
-.signal-risk-free {
-  color: #9cb1d1;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-body.light-theme .signal-risk-free {
+body.light-theme .chart-teaser p {
   color: #475569;
+}
+
+@media (max-width: 700px) {
+  .market-signal-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .market-signal-label {
+    font-size: 22px;
+  }
 }

@@ -99,14 +99,13 @@ const translations = {
     qty: "Qty",
     avg: "Avg",
     remove: "Remove",
-    watchlistNewsChart: "Ideal for following the market with more precision and fewer limits.",
-    premiumDesc: "For those who want real advantage with stronger signals and premium tools.",
-    heroTitle: "Discover when to buy and sell with more clarity",
-    heroText: "Get fast market readings to make better decisions without relying on confusing charts.",
+    watchlistNewsChart: "Precision follow-up, unlocked chart and more analyses per day.",
+    premiumDesc: "Automatic signals, asset comparison and unlimited analyses.",
+    heroTitle: "See when to buy and sell stocks with more clarity",
+    heroText: "Simple signals, live chart and a faster reading so you can decide better in the market.",
     heroStart: "Start free now",
     heroTry: "Try for free",
-    heroProof: "🔥 More than 1,000 users already analyze the market here every day",
-    heroRiskFree: "No risk • cancel anytime",
+    heroProof: "🔥 +1,000 users analyzing the market every day",
     favorited: "★ Favorited",
     favorite: "⭐ Favorite",
     loginToSyncFavorites: "Login to sync favorites.",
@@ -202,14 +201,13 @@ const translations = {
     qty: "Qtd",
     avg: "PM",
     remove: "Remover",
-    watchlistNewsChart: "Ideal para acompanhar o mercado com mais precisão e sem os limites básicos.",
-    premiumDesc: "Para quem quer tomar decisões com vantagem real e ferramentas premium.",
+    watchlistNewsChart: "Acompanhamento com mais precisão, gráfico liberado e mais análises por dia.",
+    premiumDesc: "Sinais automáticos, comparação de ativos e análises ilimitadas.",
     heroTitle: "Descubra quando comprar e vender ações com mais clareza",
-    heroText: "Receba leituras rápidas do mercado para decidir melhor, sem depender de gráficos confusos.",
+    heroText: "Veja sinais simples, gráfico ao vivo e leitura rápida para decidir melhor no mercado.",
     heroStart: "Começar grátis agora",
     heroTry: "Testar grátis",
-    heroProof: "🔥 Mais de 1.000 usuários já analisam o mercado aqui todos os dias",
-    heroRiskFree: "Sem risco • cancele quando quiser",
+    heroProof: "🔥 +1.000 usuários analisando o mercado todos os dias",
     favorited: "★ Favoritado",
     favorite: "⭐ Favoritar",
     loginToSyncFavorites: "Faça login para sincronizar favoritos.",
@@ -743,9 +741,16 @@ function clearAnalysisUI() {
   stopAutoRefresh();
   if (companyCard) companyCard.classList.add("hidden");
   if (quoteGrid) quoteGrid.classList.add("hidden");
-  if (chartCard) chartCard.classList.add("hidden");
+  if (chartCard) chartCard.classList.remove("hidden");
   if (newsSection) newsSection.classList.add("hidden");
-  if (chart) chart.innerHTML = "";
+  if (chart) {
+    chart.innerHTML = `
+      <div class="chart-teaser">
+        <strong>${currentLang === "en" ? "Live chart ready to preview" : "Gráfico ao vivo pronto para visualizar"}</strong>
+        <p>${currentLang === "en" ? "Analyze any ticker to see the chart. Login only when you want to save favorites, compare assets or unlock unlimited analyses." : "Analise qualquer ticker para ver o gráfico. Faça login apenas quando quiser salvar favoritos, comparar ativos ou liberar análises ilimitadas."}</p>
+      </div>
+    `;
+  }
   if (newsList) newsList.innerHTML = "";
   if (analysisHeroPrice) analysisHeroPrice.textContent = "--";
   if (analysisHeroMeta) analysisHeroMeta.textContent = currentLang === "en" ? "Waiting for analysis" : "Aguardando análise";
@@ -758,6 +763,7 @@ function clearAnalysisUI() {
   lastRenderedTimeframe = "";
   resetTradingViewState();
   resetSmartPremiumPanel();
+  updateMarketSignalCard(null);
   updateAnalysisStageBadge(currentLang === "en" ? "Waiting for asset" : "Aguardando ativo", "neutral");
   updateChartHeader("");
   setStatus(t("typeTicker"));
@@ -1200,12 +1206,38 @@ function updatePlanUI() {
   if (!currentUser) {
     if (userBadge) userBadge.textContent = t("visitor");
     if (signOutBtn) signOutBtn.classList.add("hidden");
+    if (logoutTopBtn) logoutTopBtn.classList.add("hidden");
+    if (starterBtn) {
+      starterBtn.disabled = false;
+      starterBtn.textContent = currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
+    }
+    if (proBtn) {
+      proBtn.disabled = false;
+      proBtn.textContent = currentLang === "en" ? "Subscribe Pro" : "Assinar Pro";
+    }
     if (portfolioSection) portfolioSection.classList.add("hidden");
     return;
   }
 
   if (userBadge) userBadge.textContent = currentUser.email || "Usuário";
   if (signOutBtn) signOutBtn.classList.remove("hidden");
+  if (logoutTopBtn) logoutTopBtn.classList.remove("hidden");
+
+  if (starterBtn) {
+    const starterActive = currentPlan === "starter" && currentPlanStatus === "active";
+    starterBtn.disabled = starterActive;
+    starterBtn.textContent = starterActive
+      ? (currentLang === "en" ? "Starter plan active" : "Plano Starter ativo")
+      : (currentLang === "en" ? "Subscribe Starter" : "Assinar Starter");
+  }
+
+  if (proBtn) {
+    const proActive = currentPlan === "pro" && currentPlanStatus === "active";
+    proBtn.disabled = proActive;
+    proBtn.textContent = proActive
+      ? (currentLang === "en" ? "Pro plan active" : "Plano Pro ativo")
+      : (currentLang === "en" ? "Subscribe Pro" : "Assinar Pro");
+  }
 
   if (currentPlan === "pro" && currentPlanStatus === "active") {
     if (portfolioSection) portfolioSection.classList.remove("hidden");
@@ -2028,78 +2060,6 @@ function buildAnalysisSnapshot(symbol, quote, candles, news = [], profile = {}) 
   };
 }
 
-
-function getSignalUiBySnapshot(snapshot = latestAnalysisSnapshot) {
-  if (!snapshot) {
-    return {
-      statusClass: "neutral",
-      statusText: currentLang === "en" ? "🟡 Waiting for analysis" : "🟡 Aguardando análise",
-      confidenceText: currentLang === "en" ? "Waiting for asset" : "Aguardando ativo",
-      reasonText: currentLang === "en"
-        ? "Based on trend, move strength and market reading."
-        : "Baseado em tendência, força do movimento e leitura do mercado."
-    };
-  }
-
-  let statusClass = "neutral";
-  let statusText = currentLang === "en" ? "🟡 Wait" : "🟡 AGUARDAR";
-
-  if (snapshot.score >= 70) {
-    statusClass = "buy";
-    statusText = currentLang === "en" ? "🟢 Strong buy signal" : "🟢 COMPRA FORTE AGORA";
-  } else if (snapshot.score <= 39) {
-    statusClass = "sell";
-    statusText = currentLang === "en" ? "🔴 Sell / avoid" : "🔴 VENDA / EVITAR AGORA";
-  }
-
-  return {
-    statusClass,
-    statusText,
-    confidenceText: `${snapshot.symbol} • ${currentLang === "en" ? "Score" : "Score"} ${snapshot.score}/100`,
-    reasonText: currentLang === "en"
-      ? "Suggested entry based on trend + volume + momentum"
-      : "Entrada sugerida baseada em tendência + volume + momentum"
-  };
-}
-
-function renderSignalCard(snapshot = latestAnalysisSnapshot) {
-  const card = document.getElementById("signalCard");
-  if (!card) return;
-
-  const statusEl = document.getElementById("signalStatus");
-  const confidenceEl = document.getElementById("signalConfidence");
-  const reasonEl = document.getElementById("signalReason");
-  const signalUi = getSignalUiBySnapshot(snapshot);
-
-  if (statusEl) {
-    statusEl.className = `signal-status ${signalUi.statusClass}`;
-    statusEl.textContent = signalUi.statusText;
-  }
-  if (confidenceEl) confidenceEl.textContent = signalUi.confidenceText;
-  if (reasonEl) reasonEl.textContent = signalUi.reasonText;
-
-  const signalUpgradeBtn = document.getElementById("signalUpgradeBtn");
-  const signalRiskFree = document.getElementById("signalRiskFree");
-  const isProActive = currentPlan === "pro" && currentPlanStatus === "active";
-
-  if (signalUpgradeBtn) {
-    signalUpgradeBtn.disabled = isProActive;
-    signalUpgradeBtn.textContent = isProActive
-      ? (currentLang === "en" ? "Pro plan active" : "Plano Pro ativo")
-      : (currentLang === "en" ? "Unlock full access" : "Desbloquear acesso completo");
-    signalUpgradeBtn.onclick = () => {
-      if (isProActive) return;
-      openUpgrade("pro");
-    };
-  }
-
-  if (signalRiskFree) {
-    signalRiskFree.textContent = currentLang === "en"
-      ? "No risk • cancel anytime"
-      : "Sem risco • cancele quando quiser";
-  }
-}
-
 function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
   const panel = document.querySelector(".analysis-hero-right");
   if (!panel) return;
@@ -2116,6 +2076,76 @@ function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
     <span class="analysis-hero-subcaption">${currentLang === "en" ? "Score" : "Score"}: ${snapshot.score}/100 • ${snapshot.decision}</span>
     <span class="analysis-hero-subcaption">${currentLang === "en" ? "Support" : "Suporte"}: ${formatPrice(snapshot.support)} • ${currentLang === "en" ? "Resistance" : "Resistência"}: ${formatPrice(snapshot.resistance)}</span>
   `;
+}
+
+
+function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
+  const card = document.getElementById("marketSignalCard");
+  if (!card) return;
+
+  const symbolEl = card.querySelector(".market-signal-symbol");
+  const labelEl = document.getElementById("marketSignalLabel");
+  const textEl = document.getElementById("marketSignalText");
+  const warningEl = document.getElementById("marketSignalWarning");
+  const btnEl = document.getElementById("signalUpgradeBtn");
+
+  if (!snapshot) {
+    if (symbolEl) symbolEl.textContent = currentLang === "en" ? "Waiting for asset" : "Aguardando ativo";
+    if (labelEl) {
+      labelEl.textContent = currentLang === "en" ? "Waiting for reading" : "Aguardando leitura";
+      labelEl.className = "market-signal-label neutral";
+    }
+    if (textEl) textEl.textContent = currentLang === "en"
+      ? "Run an analysis to unlock the signal, live chart and fast asset reading."
+      : "Faça uma análise para liberar o sinal, o gráfico ao vivo e a leitura rápida do ativo.";
+    if (warningEl) warningEl.textContent = currentLang === "en"
+      ? "See the value first. Unlock the advanced features when it makes sense."
+      : "Veja o valor primeiro. Desbloqueie os recursos avançados quando fizer sentido.";
+    if (btnEl) btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
+    return;
+  }
+
+  const decision = String(snapshot.decision || "").toLowerCase();
+  const trend = String(snapshot.trend || "").toLowerCase();
+  let tone = "neutral";
+  let label = currentLang === "en" ? "Neutral signal" : "Sinal neutro";
+  let text = currentLang === "en"
+    ? "The market is asking for more confirmation before a stronger move."
+    : "O mercado pede mais confirmação antes de um movimento mais forte.";
+
+  if (decision.includes("compra") || decision.includes("buy") || trend === "up") {
+    tone = "buy";
+    label = currentLang === "en" ? "🟢 STRONG BUY NOW" : "🟢 COMPRA FORTE AGORA";
+    text = currentLang === "en"
+      ? "Suggested entry based on trend, volume and momentum."
+      : "Entrada sugerida baseada em tendência, volume e momentum.";
+  } else if (decision.includes("venda") || decision.includes("sell") || trend === "down") {
+    tone = "sell";
+    label = currentLang === "en" ? "🔴 SELL / REDUCE NOW" : "🔴 VENDA / REDUZA AGORA";
+    text = currentLang === "en"
+      ? "Pressure is stronger on the selling side. Extra caution is recommended."
+      : "A pressão está mais forte do lado vendedor. Atenção redobrada agora.";
+  }
+
+  if (symbolEl) symbolEl.textContent = `${snapshot.symbol} • ${currentLang === "en" ? "Score" : "Score"} ${snapshot.score}/100`;
+  if (labelEl) {
+    labelEl.textContent = label;
+    labelEl.className = `market-signal-label ${tone}`;
+  }
+  if (textEl) textEl.textContent = text;
+  if (warningEl) warningEl.textContent = currentLang === "en"
+    ? "You may miss this opportunity if you wait too long."
+    : "⚠️ Você pode perder essa oportunidade se esperar.";
+  if (btnEl) {
+    if (currentPlan === "pro" && currentPlanStatus === "active") {
+      btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
+      btnEl.disabled = true;
+    } else {
+      btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
+      btnEl.disabled = false;
+      btnEl.onclick = () => openUpgrade("pro");
+    }
+  }
 }
 
 function renderOverview(quote, snapshot = latestAnalysisSnapshot) {
@@ -2160,7 +2190,7 @@ function renderOverview(quote, snapshot = latestAnalysisSnapshot) {
   marketOverview.innerHTML = smartCards;
   updateAnalysisHero(quote, currentSymbol);
   renderSmartPremiumPanel(snapshot);
-  renderSignalCard(snapshot);
+  updateMarketSignalCard(snapshot);
 }
 
 function escapeRegExp(value) {
@@ -2445,11 +2475,12 @@ async function handleSearch(silentRefresh = false) {
   }
 
   try {
+    const apiGet = currentUser ? fetchAuthJSON : fetchJSON;
     const results = await Promise.allSettled([
-      fetchAuthJSON(`/api/quote/${symbol}`),
-      fetchAuthJSON(`/api/profile/${symbol}`),
-      fetchCandlesByTimeframe(symbol, true, currentTimeframe),
-      fetchAuthJSON(`/api/news/${symbol}`)
+      apiGet(`/api/quote/${symbol}`),
+      apiGet(`/api/profile/${symbol}`),
+      fetchCandlesByTimeframe(symbol, !!currentUser, currentTimeframe),
+      apiGet(`/api/news/${symbol}`)
     ]);
 
     const quote = results[0].status === "fulfilled"
@@ -3164,27 +3195,15 @@ function applyTranslations() {
   const priceCards = document.querySelectorAll(".price-card");
   if (priceCards[0]) {
     const h3 = priceCards[0].querySelector("h3");
-    const p = priceCards[0].querySelector(".plan-copy");
-    const features = priceCards[0].querySelectorAll(".plan-features li");
+    const p = priceCards[0].querySelector("p");
     if (h3) h3.textContent = t("starter");
     if (p) p.textContent = t("watchlistNewsChart");
-    if (features[0]) features[0].textContent = currentLang === "en" ? "Data without visible delay" : "Dados sem atraso visível";
-    if (features[1]) features[1].textContent = currentLang === "en" ? "More analyses per day" : "Mais análises por dia";
-    if (features[2]) features[2].textContent = currentLang === "en" ? "Watchlist, favorites and news" : "Watchlist, favoritos e notícias";
-    if (features[3]) features[3].textContent = currentLang === "en" ? "Full chart to follow the asset" : "Gráfico completo para acompanhar o ativo";
   }
   if (priceCards[1]) {
     const h3 = priceCards[1].querySelector("h3");
-    const p = priceCards[1].querySelector(".plan-copy");
-    const features = priceCards[1].querySelectorAll(".plan-features li");
-    const planTag = priceCards[1].querySelector(".plan-tag");
+    const p = priceCards[1].querySelector("p");
     if (h3) h3.textContent = t("pro");
     if (p) p.textContent = t("premiumDesc");
-    if (planTag) planTag.textContent = currentLang === "en" ? "Most chosen" : "Mais escolhido";
-    if (features[0]) features[0].textContent = currentLang === "en" ? "Automatic buy and sell signals" : "Sinais automáticos de compra e venda";
-    if (features[1]) features[1].textContent = currentLang === "en" ? "Asset comparison" : "Comparação de ativos";
-    if (features[2]) features[2].textContent = currentLang === "en" ? "Pro portfolio and unlimited analyses" : "Carteira Pro e análises ilimitadas";
-    if (features[3]) features[3].textContent = currentLang === "en" ? "Priority on readings and premium features" : "Prioridade nas leituras e recursos premium";
   }
 
   if (starterBtn) starterBtn.textContent = currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
@@ -3248,9 +3267,6 @@ function applyTranslations() {
   if (heroBtns[0]) heroBtns[0].textContent = t("heroStart");
   if (heroBtns[1]) heroBtns[1].textContent = t("heroTry");
   if (heroProof) heroProof.textContent = t("heroProof");
-  const heroRisk = document.querySelector(".no-risk");
-  if (heroRisk) heroRisk.textContent = t("heroRiskFree");
-  renderSignalCard(latestAnalysisSnapshot);
 
   updateFavoriteButton();
   renderFavorites();
@@ -3821,20 +3837,20 @@ async function showSmartUpgrade(kind, extra = {}) {
   if (isAdminUser) return;
 
   let title = currentLang === "en"
-    ? "Unlock more power with a paid plan"
-    : "Desbloqueie mais poder com um plano pago";
+    ? "Unlock unlimited analyses and stronger signals"
+    : "Desbloqueie análises ilimitadas e sinais mais fortes";
   let subtitle = currentLang === "en"
-    ? "Choose the best plan for your next step."
-    : "Escolha o melhor plano para o seu próximo passo.";
+    ? "See the value first, then upgrade when you want more speed and decision power."
+    : "Veja o valor primeiro e faça upgrade quando quiser mais velocidade e poder de decisão.";
   let plan = "pro";
 
   if (kind === "limit") {
     title = currentLang === "en"
-      ? "🚀 Limit reached — unlock unlimited analyses now"
-      : "🚀 Limite atingido — desbloqueie análises ilimitadas agora";
+      ? "Limit reached — unlock unlimited analyses now"
+      : "Limite atingido — desbloqueie análises ilimitadas agora";
     subtitle = currentLang === "en"
-      ? "Get full access to signals, more analyses and faster decisions."
-      : "Tenha acesso completo aos sinais, mais análises e decisões mais rápidas.";
+      ? "Keep the chart visible and unlock unlimited analyses, comparison and premium signals."
+      : "Mantenha o gráfico visível e libere análises ilimitadas, comparação e sinais premium.";
     plan = "pro";
   }
 

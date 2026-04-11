@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bolsa Tempo Real Pro</title>
+  <title>Bolsa SaaS Pro - Nível 8</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -12,17 +12,17 @@
 
 <div id="upgradeBanner" class="upgrade-banner hidden">
   <div class="upgrade-banner-text">
-    <strong class="upgrade-banner-title">🚀 Limite atingido — desbloqueie análises ilimitadas agora</strong>
-    <span class="upgrade-banner-subtitle">Tenha acesso completo aos sinais, mais análises e decisões mais rápidas.</span>
+    <strong class="upgrade-banner-title">Desbloqueie todos os recursos com o plano Pro</strong>
+    <span class="upgrade-banner-subtitle">Mais análises, mais recursos e mais velocidade para decidir.</span>
   </div>
-  <button type="button" class="upgrade-banner-btn">Ver plano Pro</button>
+  <button type="button" class="upgrade-banner-btn">Ver planos</button>
 </div>
 
   <div class="container">
     <header class="top-header">
       <div>
-        <h1>Bolsa Tempo Real Pro</h1>
-        <p>Descubra sinais de compra e venda com mais clareza no mercado.</p>
+        <h1>Bolsa SaaS Pro</h1>
+        <p>Painel de mercado com autenticação, planos e dashboard</p>
       </div>
       <div class="user-side">
         <div id="planBadge" class="plan-badge">Plano: Free</div>
@@ -33,15 +33,13 @@
     </header>
 <section class="hero-sales">
       <h2>Descubra quando comprar e vender ações com mais clareza</h2>
-      <p>Receba leituras rápidas do mercado para decidir melhor, sem depender de gráficos confusos.</p>
+      <p>Veja sinais simples, gráfico ao vivo e leitura rápida para decidir melhor no mercado sem ficar perdido em telas complexas.</p>
       <div class="hero-buttons">
         <button onclick="scrollToPlans()" class="cta-primary" type="button">Começar grátis agora</button>
         <button onclick="handleSearch()" class="cta-secondary" type="button">Testar grátis</button>
       </div>
-      <div class="hero-trust">
-        <span class="no-risk">Sem risco • cancele quando quiser</span>
-        <div class="social-proof">🔥 +1.000 usuários analisando o mercado todos os dias</div>
-      </div>
+      <div class="hero-risk-free">Sem risco • cancele quando quiser</div>
+      <div class="social-proof">🔥 +1.000 usuários analisando o mercado todos os dias</div>
     </section>
 
     <section class="hero-grid">
@@ -93,31 +91,30 @@
           <div class="price-card">
             <h3>Starter</h3>
             <div class="price">R$ 29<span>/mês</span></div>
-            <p class="plan-copy">Ideal para quem quer acompanhar o mercado com mais precisão e sem os limites básicos.</p>
-            <ul class="plan-features">
-              <li>Dados sem atraso visível</li>
-              <li>Mais análises por dia</li>
-              <li>Watchlist, favoritos e notícias</li>
-              <li>Gráfico completo para acompanhar o ativo</li>
+            <p>Ideal para acompanhar o mercado com mais precisão, gráfico liberado e mais análises por dia.</p>
+            <ul class="plan-feature-list">
+              <li>✔ Gráfico liberado para acompanhar o ativo</li>
+              <li>✔ Mais análises por dia</li>
+              <li>✔ Watchlist, favoritos e notícias</li>
+              <li>✔ Ótimo começo para acompanhar o mercado</li>
             </ul>
             <button id="starterBtn" type="button">Assinar Starter</button>
           </div>
 
           <div class="price-card featured">
-            <div class="plan-tag">Mais escolhido</div>
+            <div class="best-choice-badge">Mais escolhido</div>
             <h3>Pro</h3>
             <div class="price">R$ 79<span>/mês</span></div>
-            <p class="plan-copy">Para quem quer tomar decisões com vantagem real no mercado.</p>
-            <ul class="plan-features">
-              <li>Sinais automáticos de compra e venda</li>
-              <li>Comparação de ativos</li>
-              <li>Carteira Pro e análises ilimitadas</li>
-              <li>Prioridade nas leituras e recursos premium</li>
+            <p>Para quem quer tomar decisões com vantagem real no mercado.</p>
+            <ul class="plan-feature-list">
+              <li>✔ Sinais automáticos de compra e venda</li>
+              <li>✔ Comparação de ativos</li>
+              <li>✔ Análises ilimitadas</li>
+              <li>✔ Prioridade nos dados e precisão máxima</li>
             </ul>
             <button id="proBtn" type="button">Assinar Pro</button>
           </div>
         </div>
-        <p class="plans-urgency">🔥 Mais de 1.000 usuários já estão usando a plataforma para analisar o mercado.</p>
       </div>
     </section>
 
@@ -193,19 +190,17 @@
               <span class="analysis-hero-subcaption">Layout inspirado em plataforma profissional</span>
             </div>
           </div>
-        </section>
 
-        <section id="signalCard" class="signal-card">
-          <div class="signal-card-top">
-            <span class="signal-card-kicker">📊 Sinal do mercado</span>
-            <span id="signalConfidence" class="signal-card-confidence">Aguardando ativo</span>
-          </div>
-          <div id="signalStatus" class="signal-status neutral">🟡 Aguardando análise</div>
-          <p id="signalReason" class="signal-reason">Baseado em tendência, força do movimento e leitura do mercado.</p>
-          <div class="signal-cta-row">
-            <button id="signalUpgradeBtn" type="button" class="signal-upgrade-btn">Desbloquear acesso completo</button>
-            <span id="signalRiskFree" class="signal-risk-free">Sem risco • cancele quando quiser</span>
-          </div>
+          <section id="marketSignalCard" class="market-signal-card">
+            <div class="market-signal-top">
+              <span class="market-signal-kicker">📊 Sinal do mercado</span>
+              <span class="market-signal-symbol">Aguardando ativo</span>
+            </div>
+            <strong id="marketSignalLabel" class="market-signal-label neutral">Aguardando leitura</strong>
+            <p id="marketSignalText" class="market-signal-text">Faça uma análise para liberar o sinal, o gráfico e a leitura rápida do ativo.</p>
+            <p id="marketSignalWarning" class="market-signal-warning">Veja o valor primeiro. Depois desbloqueie os recursos avançados quando fizer sentido.</p>
+            <button id="signalUpgradeBtn" type="button" class="cta-primary market-signal-btn">Liberar análises ilimitadas agora</button>
+          </section>
         </section>
 
         <section class="analysis-layout">

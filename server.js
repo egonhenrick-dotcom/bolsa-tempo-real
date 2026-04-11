@@ -1818,13 +1818,21 @@ app.post("/api/create-checkout-session", createRateLimiter({ windowMs: 60 * 1000
       eventData: { plan: checkoutPlan.plan }
     });
 
+    const trialDays = Number(
+      checkoutPlan.plan === "pro"
+        ? process.env.STRIPE_TRIAL_DAYS_PRO || 0
+        : process.env.STRIPE_TRIAL_DAYS_STARTER || 0
+    );
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
+      allow_promotion_codes: true,
       line_items: [{ price: checkoutPlan.priceId, quantity: 1 }],
       success_url: `${APP_URL}/?checkout=success`,
       cancel_url: `${APP_URL}/?checkout=cancel`,
       customer_email: req.user.email,
+      subscription_data: trialDays > 0 ? { trial_period_days: trialDays } : undefined,
       metadata: {
         user_id: req.user.id,
         plan: checkoutPlan.plan

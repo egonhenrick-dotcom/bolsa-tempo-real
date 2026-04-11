@@ -41,7 +41,6 @@ let lastRenderedTimeframe = "";
 let lastChartInteractionAt = 0;
 const CHART_INTERACTION_GUARD_MS = 12000;
 const AUTH_SYNC_EVENT_KEY = "bolsa-auth-sync-event";
-let initialPreviewBooted = false;
 
 const translations = {
   en: {
@@ -309,9 +308,64 @@ function startAutoRefresh(symbol) {
 
 function hasReachedLimit() {
   if (!usageData) return false;
-  if (!currentUser) return false;
   if (usageData.limit === "∞") return false;
   return Number(usageData.remaining) <= 0;
+}
+
+const DEFAULT_FREE_PREVIEW_SYMBOL = "AAPL";
+
+function isFreeTierUser() {
+  return !currentUser || currentPlan === "free" || currentPlanStatus !== "active";
+}
+
+function getPreviewLockedSymbol(requestedSymbol = "") {
+  return normalizeSymbol(currentSymbol || requestedSymbol || symbolInput?.value || DEFAULT_FREE_PREVIEW_SYMBOL);
+}
+
+function canUsePreviewAfterLimit(requestedSymbol = "", { silentRefresh = false } = {}) {
+  const normalizedRequested = normalizeSymbol(requestedSymbol || symbolInput?.value || DEFAULT_FREE_PREVIEW_SYMBOL);
+  const lockedSymbol = getPreviewLockedSymbol(normalizedRequested);
+
+  if (!hasReachedLimit()) return true;
+  if (!isFreeTierUser()) return false;
+  if (silentRefresh) return normalizedRequested === lockedSymbol;
+
+  if (!currentSymbol) {
+    return normalizedRequested === normalizeSymbol(DEFAULT_FREE_PREVIEW_SYMBOL);
+  }
+
+  return normalizedRequested === lockedSymbol;
+}
+
+function getUsageBadgeMessage(data = usageData) {
+  const limit = data?.limit;
+  const remaining = Number(data?.remaining);
+
+  if (limit === "∞") {
+    return currentLang === "en"
+      ? "Unlimited analyses today"
+      : "Análises ilimitadas hoje";
+  }
+
+  if (!Number.isFinite(remaining)) {
+    return `${t("remainingToday")}: ${data?.remaining ?? 0}`;
+  }
+
+  if (remaining <= 0) {
+    return currentLang === "en"
+      ? "🔒 Free limit reached today"
+      : "🔒 Limite grátis atingido hoje";
+  }
+
+  if (remaining === 1) {
+    return currentLang === "en"
+      ? "⚠️ Last free analysis today"
+      : "⚠️ Última análise grátis hoje";
+  }
+
+  return currentLang === "en"
+    ? `🎯 Free analyses today: ${remaining}`
+    : `🎯 Análises grátis hoje: ${remaining}`;
 }
 
 const watchSymbols = ["AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "META", "PETR4", "VALE3"];
@@ -771,39 +825,6 @@ function clearAnalysisUI() {
   setStatus(t("typeTicker"));
   syncActiveMarketButtons();
   updateAnalysisControlButton();
-  bootstrapDefaultPreview();
-}
-
-function bootstrapDefaultPreview(force = false) {
-  if (initialPreviewBooted && !force) return;
-  initialPreviewBooted = true;
-
-  const defaultSymbol = (localStorage.getItem("defaultPreviewSymbol") || "AAPL").trim().toUpperCase() || "AAPL";
-
-  if (symbolInput) {
-    symbolInput.value = defaultSymbol;
-  }
-
-  if (compareInput && !currentUser) {
-    compareInput.value = "";
-  }
-
-  if (chartCard) chartCard.classList.remove("hidden");
-
-  setTimeout(() => {
-    handleSearch(false).catch((error) => {
-      console.error("Falha ao iniciar preview padrão:", error?.message || error);
-      initialPreviewBooted = false;
-      if (chart) {
-        chart.innerHTML = `
-          <div class="chart-teaser">
-            <strong>${currentLang === "en" ? "Live chart ready to preview" : "Gráfico ao vivo pronto para visualizar"}</strong>
-            <p>${currentLang === "en" ? "Analyze any ticker to see the chart. Login only when you want to save favorites, compare assets or unlock unlimited analyses." : "Analise qualquer ticker para ver o gráfico. Faça login apenas quando quiser salvar favoritos, comparar ativos ou liberar análises ilimitadas."}</p>
-          </div>
-        `;
-      }
-    });
-  }, 280);
 }
 
 function getAccessToken() {
@@ -1231,8 +1252,6 @@ function updateFavoriteButton() {
 }
 
 function updatePlanUI() {
-  protectPublicUiShell();
-
   const planName =
     currentPlan === "pro" ? "Pro" :
     currentPlan === "starter" ? "Starter" :
@@ -2510,20 +2529,24 @@ async function handleSearch(silentRefresh = false) {
 
   const usageBefore = await refreshUsage();
   const limitReached = usageBefore && usageBefore.limit !== "∞" && Number(usageBefore.remaining) <= 0;
-  const allowVisitorPreview = isVisitor && limitReached;
+  const allowPreviewMode = limitReached && canUsePreviewAfterLimit(symbol, { silentRefresh });
 
-  if (limitReached && !allowVisitorPreview) {
+  if (limitReached && !allowPreviewMode) {
     await trackEvent("daily_limit_reached", {
       symbol,
       plan: currentPlan,
       status: currentPlanStatus,
-      remaining: usageBefore.remaining
+      remaining: usageBefore.remaining,
+      locked_preview_symbol: getPreviewLockedSymbol(symbol)
     });
     await showSmartUpgrade("limit", { symbol, remaining: usageBefore.remaining });
-    setStatus(`🚫 ${t("dailyLimitReached")} • 👉 ${t("upgradePlan")}`);
+    const lockedSymbolLabel = displaySymbol(getPreviewLockedSymbol(symbol));
+    setStatus(currentLang === "en"
+      ? `🚫 Limit reached today. Keep the ${lockedSymbolLabel} chart visible and upgrade to analyze new assets.`
+      : `🚫 Limite atingido hoje. Mantenha o gráfico de ${lockedSymbolLabel} visível e faça upgrade para analisar novos ativos.`);
     if (searchBtn) {
-      searchBtn.disabled = true;
-      searchBtn.style.opacity = "0.5";
+      searchBtn.disabled = false;
+      searchBtn.style.opacity = "1";
     }
     return;
   }
@@ -2546,7 +2569,7 @@ async function handleSearch(silentRefresh = false) {
 
   try {
     const apiGet = currentUser ? fetchAuthJSON : fetchJSON;
-    const quotePromise = allowVisitorPreview
+    const quotePromise = allowPreviewMode
       ? Promise.resolve({ c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, source: "preview", error: "PREVIEW_ONLY" })
       : apiGet(`/api/quote/${symbol}`);
 
@@ -2573,7 +2596,7 @@ async function handleSearch(silentRefresh = false) {
       ? results[3].value
       : [];
 
-    if (allowVisitorPreview) {
+    if (allowPreviewMode) {
       quote = buildPreviewQuoteFromCandles(candles, quote);
     }
 
@@ -2602,7 +2625,7 @@ async function handleSearch(silentRefresh = false) {
     if (companyTicker) companyTicker.textContent = displaySymbol(symbol);
     if (companyExchange) {
       const exchangeLabel = profile.exchange || t("exchange");
-      companyExchange.textContent = `${exchangeLabel} • ${allowVisitorPreview ? (currentLang === "en" ? "Preview mode" : "Modo visual") : getQuoteSourceLabel(quote)}`;
+      companyExchange.textContent = `${exchangeLabel} • ${allowPreviewMode ? (currentLang === "en" ? "Preview mode" : "Modo visual") : getQuoteSourceLabel(quote)}`;
     }
 
     latestRenderedQuote = { ...quote };
@@ -2631,7 +2654,7 @@ async function handleSearch(silentRefresh = false) {
 
     if (candleSeries.length < 2) {
       setStatus(`⚠️ ${displaySymbol(symbol)} sem dados suficientes para o gráfico em ${getTimeframeLabel(currentTimeframe)}.`);
-    } else if (!allowVisitorPreview && (candles?.source || candles?.interval)) {
+    } else if (!allowPreviewMode && (candles?.source || candles?.interval)) {
       const chartInfo = [candles?.source || "chart", candles?.interval || ""].filter(Boolean).join(" • ");
       setStatus(`${t("updatedFor")} ${displaySymbol(symbol)} • ${getQuoteSourceLabel(quote)} • gráfico ${chartInfo}.`);
     }
@@ -2662,9 +2685,9 @@ async function handleSearch(silentRefresh = false) {
       const remaining = usageAfter?.remaining ?? "-";
       const baseStatus = getFriendlyAnalysisStatus(symbol, quote, candles);
       const tone = quote?.error === "QUOTE_UNAVAILABLE" ? "warning" : "success";
-      updateAnalysisStageBadge(`${displaySymbol(symbol)} • ${allowVisitorPreview ? (currentLang === "en" ? "Preview active" : "Prévia ativa") : getQuoteSourceLabel(quote)}`, tone);
+      updateAnalysisStageBadge(`${displaySymbol(symbol)} • ${allowPreviewMode ? (currentLang === "en" ? "Preview active" : "Prévia ativa") : getQuoteSourceLabel(quote)}`, tone);
 
-      if (allowVisitorPreview) {
+      if (allowPreviewMode) {
         const previewStatus = currentLang === "en"
           ? `Preview unlocked for ${displaySymbol(symbol)}. The live chart is visible now. Login only when you want favorites, compare or unlimited analyses.`
           : `Prévia liberada para ${displaySymbol(symbol)}. O gráfico ao vivo já está visível. Faça login apenas quando quiser favoritos, comparação ou análises ilimitadas.`;
@@ -2675,7 +2698,7 @@ async function handleSearch(silentRefresh = false) {
       }
     }
 
-    if (!allowVisitorPreview) {
+    if (!allowPreviewMode) {
       startAutoRefresh(symbol);
     } else {
       stopAutoRefresh();
@@ -2694,11 +2717,15 @@ async function handleSearch(silentRefresh = false) {
       });
       const usageAfterError = await refreshUsage();
       const remaining = usageAfterError?.remaining ?? 0;
-      setStatus(`🚫 ${t("dailyLimitReached")} • 👉 ${t("upgradePlan")} (${t("remainingToday")}: ${remaining})`);
+      const lockedSymbolLabel = displaySymbol(getPreviewLockedSymbol(symbol));
+      setStatus(currentLang === "en"
+        ? `🚫 Limit reached today. The ${lockedSymbolLabel} chart can stay visible, but new analyses require upgrade. (${t("remainingToday")}: ${remaining})`
+        : `🚫 Limite atingido hoje. O gráfico de ${lockedSymbolLabel} pode continuar visível, mas novas análises exigem upgrade. (${t("remainingToday")}: ${remaining})`);
       if (searchBtn) {
-        searchBtn.disabled = !isVisitor;
-        searchBtn.style.opacity = isVisitor ? "1" : "0.5";
+        searchBtn.disabled = false;
+        searchBtn.style.opacity = "1";
       }
+      await showSmartUpgrade("limit", { symbol, remaining });
     } else {
       updateAnalysisStageBadge(`${displaySymbol(symbol)} • erro`, "danger");
       setStatus(`⚠️ ${error.message}`);
@@ -3518,6 +3545,7 @@ async function init() {
   await initSupabase();
   applyTranslations();
   updatePlanUI();
+  await refreshUsage();
   
   if (symbolInput) symbolInput.value = "AAPL";
   setSearchHint();
@@ -3536,6 +3564,18 @@ async function init() {
   }, 120000);
   syncActiveMarketButtons();
   updateAnalysisControlButton();
+
+  const bootSymbol = normalizeSymbol(symbolInput?.value || DEFAULT_FREE_PREVIEW_SYMBOL);
+  if (symbolInput && bootSymbol) {
+    symbolInput.value = displaySymbol(bootSymbol);
+    setTimeout(() => {
+      if (!isSearchingNow) {
+        handleSearch(false).catch((error) => {
+          console.error('boot preview error:', error?.message || error);
+        });
+      }
+    }, 180);
+  }
 }
 
 // =========================
@@ -3673,6 +3713,11 @@ function setAdminStatus(message) {
 function updateUsageUI(data) {
   if (!data) return;
 
+  usageData = {
+    ...usageData,
+    ...data
+  };
+
   if (data.plan) {
     currentPlan = data.plan || "free";
     currentPlanStatus = data.status || "inactive";
@@ -3683,28 +3728,40 @@ function updateUsageUI(data) {
 
   const usageBadge = getUsageBadge();
   if (usageBadge) {
-    usageBadge.textContent = `${t("remainingToday")}: ${data.remaining}`;
+    usageBadge.textContent = getUsageBadgeMessage(data);
+    usageBadge.title = currentLang === "en"
+      ? `Used today: ${data.used ?? 0} • Remaining: ${data.remaining}`
+      : `Usadas hoje: ${data.used ?? 0} • Restantes: ${data.remaining}`;
+    usageBadge.dataset.state = Number(data.remaining) <= 0 ? "locked" : Number(data.remaining) === 1 ? "warning" : "active";
   }
 
   if (searchBtn) {
     const blocked = data.limit !== "∞" && Number(data.remaining) <= 0;
-    searchBtn.disabled = blocked;
-    searchBtn.style.opacity = blocked ? "0.5" : "1";
+    searchBtn.disabled = false;
+    searchBtn.style.opacity = "1";
+    searchBtn.textContent = blocked
+      ? (currentLang === "en" ? "Unlock now" : "Desbloquear agora")
+      : t("analyze");
+  }
+
+  if (Number(data.remaining) <= 1 && Number(data.limit) !== Infinity && !isAdminUser) {
+    updateUpgradeBanner({
+      visible: true,
+      title: Number(data.remaining) <= 0
+        ? (currentLang === "en" ? "Limit reached — unlock unlimited analyses now" : "Limite atingido — desbloqueie análises ilimitadas agora")
+        : (currentLang === "en" ? "You are on your last free analysis" : "Você está na sua última análise grátis"),
+      subtitle: currentLang === "en"
+        ? "Keep the live chart visible and unlock new analyses, comparison and premium signals."
+        : "Mantenha o gráfico ao vivo visível e desbloqueie novas análises, comparação e sinais premium.",
+      cta: currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro",
+      plan: "pro"
+    });
   }
 
   toggleAdminSection();
 }
 
-function protectPublicUiShell() {
-  if (!currentUser) {
-    if (logoutTopBtn) logoutTopBtn.classList.add("hidden");
-    const adminSection = getAdminSection();
-    if (adminSection) adminSection.classList.add("hidden");
-  }
-}
-
 function toggleAdminSection() {
-  protectPublicUiShell();
   const adminSection = getAdminSection();
   if (!adminSection) return;
 
@@ -4516,8 +4573,9 @@ async function fetchAdminMine() {
 
     if (data?.is_admin) {
       console.log("Admin detectado");
-      isAdminUser = true;
-      toggleAdminSection();
+
+      const adminSection = document.getElementById("adminSection");
+      if (adminSection) adminSection.classList.remove("hidden");
 
       if (typeof loadAdminDashboard === "function") {
         loadAdminDashboard();
@@ -4526,9 +4584,6 @@ async function fetchAdminMine() {
       if (typeof loadAdminUsers === "function") {
         loadAdminUsers();
       }
-    } else {
-      isAdminUser = false;
-      toggleAdminSection();
     }
 
     return data;

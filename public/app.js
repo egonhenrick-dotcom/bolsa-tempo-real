@@ -2178,7 +2178,7 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
       } else {
         btnEl.style.display = "inline-flex";
         btnEl.disabled = false;
-        btnEl.textContent = currentPlan === "starter" && currentPlanStatus === "active"
+        btnEl.textContent = (currentPlan === "starter" && currentPlanStatus === "active")
           ? (currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro")
           : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
         btnEl.onclick = () => openUpgrade("pro");
@@ -2226,7 +2226,7 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
     } else {
       btnEl.style.display = "inline-flex";
       btnEl.disabled = false;
-      btnEl.textContent = currentPlan === "starter" && currentPlanStatus === "active"
+      btnEl.textContent = (currentPlan === "starter" && currentPlanStatus === "active")
         ? (currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro")
         : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
       btnEl.onclick = () => openUpgrade("pro");

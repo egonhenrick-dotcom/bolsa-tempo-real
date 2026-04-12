@@ -2170,9 +2170,20 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
       : (currentLang === "en"
           ? "See the value first. Unlock the advanced features when it makes sense."
           : "Veja o valor primeiro. Desbloqueie os recursos avançados quando fizer sentido.");
-    if (btnEl) btnEl.textContent = isUnlimitedAccessUser()
-      ? (currentLang === "en" ? "Pro plan active" : "Plano Pro ativo")
-      : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
+    if (btnEl) {
+      if (isUnlimitedAccessUser()) {
+        btnEl.style.display = "none";
+        btnEl.disabled = true;
+        btnEl.onclick = null;
+      } else {
+        btnEl.style.display = "inline-flex";
+        btnEl.disabled = false;
+        btnEl.textContent = currentPlan === "starter" && currentPlanStatus === "active"
+          ? (currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro")
+          : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
+        btnEl.onclick = () => openUpgrade("pro");
+      }
+    }
     return;
   }
 
@@ -2208,12 +2219,16 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
     ? "You may miss this opportunity if you wait too long."
     : "⚠️ Você pode perder essa oportunidade se esperar.";
   if (btnEl) {
-    if (currentPlan === "pro" && currentPlanStatus === "active") {
-      btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
+    if (isUnlimitedAccessUser()) {
+      btnEl.style.display = "none";
       btnEl.disabled = true;
+      btnEl.onclick = null;
     } else {
-      btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
+      btnEl.style.display = "inline-flex";
       btnEl.disabled = false;
+      btnEl.textContent = currentPlan === "starter" && currentPlanStatus === "active"
+        ? (currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro")
+        : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
       btnEl.onclick = () => openUpgrade("pro");
     }
   }

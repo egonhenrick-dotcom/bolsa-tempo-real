@@ -2149,6 +2149,58 @@ app.get("/api/ready", (_req, res) => {
   res.json({ ok: !isShuttingDown, shuttingDown: isShuttingDown, uptime: Math.round(process.uptime()), now: new Date().toISOString() });
 });
 
+async function syncSubscriptionFromStripeObject(subscription, fallback = {}) {
+  if (!subscription) return;
+
+  const userId = subscription.metadata?.user_id || fallback.userId || null;
+  const plan = subscription.metadata?.plan || fallback.plan || "starter";
+  const status = subscription.status === "active" || subscription.status === "trialing"
+    ? "active"
+    : subscription.status === "canceled"
+      ? "canceled"
+      : subscription.status || "inactive";
+  const currentPeriodEnd = subscription.current_period_end
+    ? new Date(subscription.current_period_end * 1000).toISOString()
+    : null;
+
+  if (!userId) {
+    console.warn("[STRIPE] Assinatura recebida sem user_id no metadata.", {
+      subscriptionId: subscription.id || null,
+      customerId: subscription.customer || null
+    });
+    return;
+  }
+
+  const { error } = await upsertSubscriptionByUserId({
+    userId,
+    plan,
+    status,
+    stripeCustomerId: subscription.customer || null,
+    stripeSubscriptionId: subscription.id || null,
+    currentPeriodEnd
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (status === "active") {
+    await resetUsageByUserId(userId);
+  }
+
+  await trackEvent({
+    eventType: "stripe_subscription_synced",
+    eventData: {
+      user_id: userId,
+      plan,
+      status,
+      stripe_subscription_id: subscription.id || null,
+      current_period_end: currentPeriodEnd
+    },
+    targetUserId: userId
+  });
+}
+
 app.post("/api/stripe/webhook", async (req, res) => {
   try {
     const sig = req.headers["stripe-signature"];
@@ -2170,60 +2222,56 @@ app.post("/api/stripe/webhook", async (req, res) => {
       const session = event.data.object;
 
       if (session.mode === "subscription") {
-        const user_id = session.metadata?.user_id;
+        const userId = session.metadata?.user_id || session.client_reference_id || null;
         const plan = session.metadata?.plan || "starter";
-        const stripe_customer_id = session.customer || null;
-        const stripe_subscription_id = session.subscription || null;
+        const subscriptionId = typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription?.id || null;
 
-        if (user_id) {
+        if (subscriptionId) {
+          const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+          await syncSubscriptionFromStripeObject(stripeSubscription, { userId, plan });
+        } else if (userId) {
           const { error } = await upsertSubscriptionByUserId({
-            userId: user_id,
+            userId,
             plan,
             status: "active",
-            stripeCustomerId: stripe_customer_id,
-            stripeSubscriptionId: stripe_subscription_id
+            stripeCustomerId: session.customer || null,
+            stripeSubscriptionId: null,
+            currentPeriodEnd: null
           });
 
           if (error) {
             throw error;
           }
 
-          await trackEvent({
-            eventType: "checkout_completed",
-            eventData: { user_id, plan, stripe_subscription_id }
-          });
+          await resetUsageByUserId(userId);
         }
+
+        await trackEvent({
+          eventType: "checkout_completed",
+          eventData: {
+            user_id: userId,
+            plan,
+            stripe_customer_id: session.customer || null,
+            stripe_subscription_id: subscriptionId
+          },
+          targetUserId: userId
+        });
       }
     }
 
-    if (event.type === "customer.subscription.updated") {
+    if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
       const subscription = event.data.object;
-
-      await supabaseAdmin
-        .from("subscriptions")
-        .update({
-          status: subscription.status === "active" ? "active" : subscription.status,
-          stripe_customer_id: subscription.customer || null,
-          stripe_subscription_id: subscription.id || null,
-          current_period_end: subscription.current_period_end
-            ? new Date(subscription.current_period_end * 1000).toISOString()
-            : null
-        })
-        .eq("stripe_subscription_id", subscription.id);
+      await syncSubscriptionFromStripeObject(subscription);
     }
 
     if (event.type === "customer.subscription.deleted") {
       const subscription = event.data.object;
-
-      await supabaseAdmin
-        .from("subscriptions")
-        .update({
-          status: "canceled",
-          current_period_end: subscription.current_period_end
-            ? new Date(subscription.current_period_end * 1000).toISOString()
-            : null
-        })
-        .eq("stripe_subscription_id", subscription.id);
+      await syncSubscriptionFromStripeObject({
+        ...subscription,
+        status: "canceled"
+      });
     }
 
     res.json({ received: true });

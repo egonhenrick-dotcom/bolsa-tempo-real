@@ -32,20 +32,20 @@
       </div>
     </header>
 <section class="hero-sales">
-      <h2>Pare de analisar no escuro.</h2>
-      <p>Descubra sinais de compra e venda em segundos com análise automática de ações. Sem gráficos complexos. Sem achismo.</p>
+      <h2>Pare de perder dinheiro por indecisão.</h2>
+      <p>Receba sinais claros de compra e venda em segundos, sem precisar entender gráfico ou analisar o dia inteiro.</p>
       <div class="hero-buttons">
-        <button onclick="scrollToPlans()" class="cta-primary" type="button">Testar grátis agora</button>
-        <button onclick="handleSearch()" class="cta-secondary" type="button">Ver exemplo ao vivo</button>
+        <button onclick="scrollToPlans()" class="cta-primary" type="button">Testar análise grátis agora</button>
+        <button onclick="document.getElementById('salesProofSection')?.scrollIntoView({behavior:'smooth'})" class="cta-secondary" type="button">Ver exemplo real</button>
       </div>
       <div class="hero-risk-free">Sem risco • cancele quando quiser</div>
-      <div class="social-proof">🔥 Plataforma criada para quem quer decidir melhor sem se perder em telas complexas</div>
+      <div class="social-proof">⚠️ A maioria dos investidores perde dinheiro por entrar atrasado.</div>
     </section>
 
     <section class="card" id="salesProofSection">
       <div class="section-title-row">
         <h2>Veja como funciona na prática</h2>
-        <span>Exemplo ao vivo</span>
+        <span>Exemplo real agora</span>
       </div>
 
       <div class="pricing-grid">
@@ -54,16 +54,18 @@
           <p><strong>Sinal:</strong> Compra</p>
           <p><strong>Confiança:</strong> 67%</p>
           <p><strong>Tendência:</strong> Alta</p>
-          <p>Análise gerada automaticamente com base em dados de mercado para entregar uma leitura rápida e objetiva.</p>
+          <p style="color:#00ff88;">✔ Entrada sugerida baseada em tendência + volume</p>
+          <p style="color:#ffaa00;">⚠️ Você pode perder essa oportunidade se esperar</p>
         </div>
 
-        <div class="price-card">
+        <div class="price-card featured">
+          <div class="best-choice-badge">Valor imediato</div>
           <h3>Por que isso ajuda?</h3>
           <ul class="plan-feature-list">
             <li>✔ Descubra oportunidades antes do mercado reagir</li>
             <li>✔ Evite decisões baseadas em emoção</li>
             <li>✔ Tenha análise clara em segundos</li>
-            <li>✔ Veja gráfico, leitura rápida e contexto no mesmo lugar</li>
+            <li>✔ Veja gráfico, leitura e contexto no mesmo lugar</li>
           </ul>
         </div>
       </div>
@@ -81,7 +83,8 @@
           <p>Busque por PETR4, VALE3, AAPL, TSLA e outros ativos em segundos.</p>
         </div>
 
-        <div class="price-card">
+        <div class="price-card featured">
+          <div class="best-choice-badge">Mais rápido</div>
           <h3>2. Clique em analisar</h3>
           <p>O sistema cruza os dados e entrega sinal, gráfico e leitura rápida do ativo.</p>
         </div>
@@ -107,13 +110,14 @@
           <p><strong>Taxa de acerto: 60%</strong></p>
         </div>
 
-        <div class="price-card">
-          <h3>Confiável e em crescimento</h3>
+        <div class="price-card featured">
+          <div class="best-choice-badge">Confiável</div>
+          <h3>Confiança em crescimento</h3>
           <ul class="plan-feature-list">
             <li>✔ +1.200 análises realizadas</li>
             <li>✔ Usuários ativos diariamente</li>
             <li>✔ Sistema em evolução contínua</li>
-            <li>✔ Experiência simples para quem quer agilidade</li>
+            <li>✔ Experiência simples para agir com mais clareza</li>
           </ul>
         </div>
       </div>
@@ -168,12 +172,12 @@
           <div class="price-card">
             <h3>Starter</h3>
             <div class="price">R$ 29<span>/mês</span></div>
-            <p>Para quem quer começar com segurança e analisar o mercado com mais clareza no dia a dia.</p>
+            <p>Para quem quer parar de errar entradas no mercado e acompanhar o ativo com mais clareza.</p>
             <ul class="plan-feature-list">
               <li>✔ Gráfico liberado para acompanhar o ativo</li>
               <li>✔ Mais análises por dia</li>
               <li>✔ Watchlist, favoritos e notícias</li>
-              <li>✔ Ótimo plano para quem está saindo do grátis</li>
+              <li>✔ Ótimo plano para sair do grátis com mais segurança</li>
             </ul>
             <button id="starterBtn" type="button">Começar com Starter</button>
           </div>
@@ -182,7 +186,7 @@
             <div class="best-choice-badge">Mais escolhido</div>
             <h3>Pro</h3>
             <div class="price">R$ 79<span>/mês</span></div>
-            <p>Para quem quer decisões mais precisas, sinais automáticos e liberdade total de uso.</p>
+            <p><strong>Para quem quer vantagem real e agir antes da maioria</strong></p>
             <ul class="plan-feature-list">
               <li>✔ Sinais automáticos de compra e venda</li>
               <li>✔ Comparação de ativos</li>
@@ -197,12 +201,12 @@
 
     <section class="card" id="finalCtaSection">
       <div class="section-title-row">
-        <h2>Comece agora gratuitamente</h2>
-        <span>Sem compromisso</span>
+        <h2>Você pode continuar no achismo…</h2>
+        <span>Ou agir hoje</span>
       </div>
-      <p>Teste a plataforma, veja como a análise funciona e só faça upgrade quando enxergar valor real.</p>
+      <p>Comece grátis agora e veja o valor da plataforma antes de fazer upgrade.</p>
       <div class="hero-buttons">
-        <button onclick="scrollToPlans()" class="cta-primary" type="button">Ver planos agora</button>
+        <button onclick="scrollToPlans()" class="cta-primary" type="button">Começar grátis agora</button>
         <button onclick="handleSearch()" class="cta-secondary" type="button">Testar análise grátis</button>
       </div>
     </section>
@@ -449,6 +453,11 @@
 
   </div>
 
+  <script>
+  function scrollToPlans() {
+    document.getElementById("plans")?.scrollIntoView({ behavior: "smooth" });
+  }
+</script>
   <script src="https://s3.tradingview.com/tv.js"></script>
   <script src="app.js"></script>
 </body>

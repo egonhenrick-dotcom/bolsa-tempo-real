@@ -2170,20 +2170,9 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
       : (currentLang === "en"
           ? "See the value first. Unlock the advanced features when it makes sense."
           : "Veja o valor primeiro. Desbloqueie os recursos avançados quando fizer sentido.");
-    if (btnEl) {
-      if (isUnlimitedAccessUser()) {
-        btnEl.style.display = "none";
-        btnEl.disabled = true;
-        btnEl.onclick = null;
-      } else {
-        btnEl.style.display = "inline-flex";
-        btnEl.disabled = false;
-        btnEl.textContent = (currentPlan === "starter" && currentPlanStatus === "active")
-          ? (currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro")
-          : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
-        btnEl.onclick = () => openUpgrade("pro");
-      }
-    }
+    if (btnEl) btnEl.textContent = isUnlimitedAccessUser()
+      ? (currentLang === "en" ? "Pro plan active" : "Plano Pro ativo")
+      : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
     return;
   }
 
@@ -2219,16 +2208,12 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
     ? "You may miss this opportunity if you wait too long."
     : "⚠️ Você pode perder essa oportunidade se esperar.";
   if (btnEl) {
-    if (isUnlimitedAccessUser()) {
-      btnEl.style.display = "none";
+    if (currentPlan === "pro" && currentPlanStatus === "active") {
+      btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
       btnEl.disabled = true;
-      btnEl.onclick = null;
     } else {
-      btnEl.style.display = "inline-flex";
+      btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
       btnEl.disabled = false;
-      btnEl.textContent = (currentPlan === "starter" && currentPlanStatus === "active")
-        ? (currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro")
-        : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
       btnEl.onclick = () => openUpgrade("pro");
     }
   }
@@ -4718,3 +4703,89 @@ async function fetchAdminMine() {
 }
 
 // === BLINDAGEM FINAL APLICADA (TIMEFRAME + SINCRONISMO) ===
+
+
+
+/* ================================
+MONETIZAÇÃO PESADA (AUTO)
+================================ */
+
+// simulação de plano (ajuste depois com backend real)
+function getUserPlan() {
+  return localStorage.getItem("plan") || "free";
+}
+
+function setUserPlan(p){
+  localStorage.setItem("plan", p);
+}
+
+// limite free
+let freeLimit = 3;
+
+function getRemaining() {
+  let used = parseInt(localStorage.getItem("used") || "0");
+  return Math.max(0, freeLimit - used);
+}
+
+function incrementUsage() {
+  let used = parseInt(localStorage.getItem("used") || "0");
+  localStorage.setItem("used", used + 1);
+}
+
+// BLOQUEIO VISUAL
+function applyMonetizationBlock() {
+  const plan = getUserPlan();
+  if(plan === "pro") return;
+
+  const target = document.getElementById("analysisStage");
+  if(!target) return;
+
+  const remaining = getRemaining();
+
+  if(remaining <= 0){
+    target.innerHTML += `
+      <div style="background:#0b1220;border:1px solid #1f2a44;padding:20px;border-radius:12px;margin-top:15px;text-align:center;">
+        <h3 style="color:#ff4d4d;">🔒 Limite atingido</h3>
+        <p>Você já usou todas as análises gratuitas hoje.</p>
+        <button onclick="upgradeToPro()" style="margin-top:10px;padding:10px 20px;background:#00ff88;border:none;border-radius:8px;cursor:pointer;">
+          Desbloquear PRO
+        </button>
+      </div>
+    `;
+  } else {
+    target.innerHTML += `
+      <div style="margin-top:10px;color:#ffaa00;">
+        ⚠️ Restam apenas ${remaining} análises grátis hoje
+      </div>
+    `;
+  }
+}
+
+// UPGRADE
+function upgradeToPro(){
+  alert("Simulação: usuário virou PRO");
+  setUserPlan("pro");
+  location.reload();
+}
+
+// INTERCEPTAR ANALISAR
+const originalSearch = window.handleSearch;
+
+window.handleSearch = async function(){
+  const plan = getUserPlan();
+
+  if(plan !== "pro"){
+    let remaining = getRemaining();
+    if(remaining <= 0){
+      applyMonetizationBlock();
+      return;
+    }
+    incrementUsage();
+  }
+
+  if(originalSearch){
+    await originalSearch();
+  }
+
+  setTimeout(applyMonetizationBlock, 500);
+};

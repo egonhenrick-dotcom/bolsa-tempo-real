@@ -3099,38 +3099,114 @@ async function signOut() {
 async function startCheckout(plan) {
   if (checkoutInFlight) return;
 
+  const normalizedPlan = plan === "pro" ? "pro" : "starter";
+
   if (!currentUser) {
-    await trackEvent("checkout_login_required", { plan });
+    await trackEvent("checkout_login_required", { plan: normalizedPlan });
     setStatus(t("loginFirstSubscribe"));
+    const authCard = document.getElementById("authCard");
+    if (authCard) authCard.scrollIntoView({ behavior: "smooth", block: "center" });
     return;
   }
 
-  const priceId = plan === "pro" ? appConfig.prices.pro : appConfig.prices.starter;
+  if (!appConfig?.prices) {
+    try {
+      appConfig = await fetchJSON("/api/public-config");
+    } catch (error) {
+      setStatus(error?.message || "Falha ao carregar configuração do checkout.");
+      return;
+    }
+  }
+
+  const priceId = normalizedPlan === "pro" ? appConfig?.prices?.pro : appConfig?.prices?.starter;
   if (!priceId) {
-    await trackEvent("checkout_missing_price", { plan });
+    await trackEvent("checkout_missing_price", { plan: normalizedPlan });
     setStatus(t("stripePriceMissing"));
     return;
   }
 
+  const starterOriginalLabel = starterBtn?.textContent || "Assinar Starter";
+  const proOriginalLabel = proBtn?.textContent || "Assinar Pro";
+
   try {
     checkoutInFlight = true;
-    if (starterBtn) starterBtn.disabled = true;
-    if (proBtn) proBtn.disabled = true;
-    await trackEvent("upgrade_click", { plan });
+
+    if (starterBtn) {
+      starterBtn.disabled = true;
+      starterBtn.textContent = normalizedPlan === "starter"
+        ? (currentLang === "en" ? "Opening checkout..." : "Abrindo checkout...")
+        : starterOriginalLabel;
+    }
+
+    if (proBtn) {
+      proBtn.disabled = true;
+      proBtn.textContent = normalizedPlan === "pro"
+        ? (currentLang === "en" ? "Opening checkout..." : "Abrindo checkout...")
+        : proOriginalLabel;
+    }
+
+    await trackEvent("upgrade_click", { plan: normalizedPlan });
+
     const data = await fetchAuthJSON("/api/create-checkout-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan })
+      body: JSON.stringify({ plan: normalizedPlan })
     });
+
+    if (!data?.url) {
+      throw new Error(currentLang === "en"
+        ? "Checkout URL not returned by the server."
+        : "A URL do checkout não foi retornada pelo servidor.");
+    }
+
+    setStatus(currentLang === "en"
+      ? `Redirecting to secure ${normalizedPlan === "pro" ? "Pro" : "Starter"} checkout...`
+      : `Redirecionando para o checkout seguro do ${normalizedPlan === "pro" ? "Pro" : "Starter"}...`);
 
     window.location.href = data.url;
   } catch (error) {
-    setStatus(error.message);
+    setStatus(error?.message || "Falha ao abrir checkout.");
   } finally {
     checkoutInFlight = false;
-    if (starterBtn) starterBtn.disabled = false;
-    if (proBtn) proBtn.disabled = false;
+    if (starterBtn) {
+      starterBtn.disabled = false;
+      starterBtn.textContent = starterOriginalLabel;
+    }
+    if (proBtn) {
+      proBtn.disabled = false;
+      proBtn.textContent = proOriginalLabel;
+    }
   }
+}
+
+function handleCheckoutReturn() {
+  try {
+    const url = new URL(window.location.href);
+    const checkout = url.searchParams.get("checkout");
+    const plan = url.searchParams.get("plan");
+
+    if (!checkout) return;
+
+    const planLabel = plan === "pro" ? "Pro" : "Starter";
+
+    if (checkout === "success") {
+      setStatus(currentLang === "en"
+        ? `Payment confirmed for ${planLabel}. Updating your access...`
+        : `Pagamento confirmado para o ${planLabel}. Atualizando seu acesso...`);
+      setTimeout(() => {
+        refreshAuthState("checkout-success").catch(() => {});
+        refreshUsage().catch(() => {});
+      }, 1200);
+    } else if (checkout === "cancel") {
+      setStatus(currentLang === "en"
+        ? `Checkout for ${planLabel} canceled. You can try again anytime.`
+        : `Checkout do ${planLabel} cancelado. Você pode tentar novamente quando quiser.`);
+    }
+
+    url.searchParams.delete("checkout");
+    url.searchParams.delete("plan");
+    window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+  } catch {}
 }
 
 // ==================== FUNÇÃO CORRIGIDA refreshAuthState ====================
@@ -3564,6 +3640,7 @@ async function init() {
   await initSupabase();
   applyTranslations();
   updatePlanUI();
+  handleCheckoutReturn();
   await refreshUsage();
   
   if (symbolInput) symbolInput.value = "AAPL";

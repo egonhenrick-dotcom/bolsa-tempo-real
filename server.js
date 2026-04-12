@@ -1805,10 +1805,24 @@ app.post("/api/create-checkout-session", createRateLimiter({ windowMs: 60 * 1000
   try {
     await upsertPresence(req.user);
 
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(503).json({ error: "Stripe não configurado no servidor." });
+    }
+
     const checkoutPlan = getCheckoutPlanConfig(req.body?.plan);
 
     if (!checkoutPlan) {
       return res.status(400).json({ error: "Plano inválido ou preço não configurado." });
+    }
+
+    const currentSubscription = req.subscription || null;
+    const alreadyActiveOnSamePlan =
+      currentSubscription &&
+      currentSubscription.status === "active" &&
+      currentSubscription.plan === checkoutPlan.plan;
+
+    if (alreadyActiveOnSamePlan) {
+      return res.status(409).json({ error: `Você já possui o plano ${checkoutPlan.plan} ativo.` });
     }
 
     await trackEvent({
@@ -1822,16 +1836,24 @@ app.post("/api/create-checkout-session", createRateLimiter({ windowMs: 60 * 1000
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price: checkoutPlan.priceId, quantity: 1 }],
-      success_url: `${APP_URL}/?checkout=success`,
-      cancel_url: `${APP_URL}/?checkout=cancel`,
+      success_url: `${APP_URL}/?checkout=success&plan=${checkoutPlan.plan}`,
+      cancel_url: `${APP_URL}/?checkout=cancel&plan=${checkoutPlan.plan}`,
       customer_email: req.user.email,
+      client_reference_id: req.user.id,
+      allow_promotion_codes: false,
       metadata: {
         user_id: req.user.id,
         plan: checkoutPlan.plan
+      },
+      subscription_data: {
+        metadata: {
+          user_id: req.user.id,
+          plan: checkoutPlan.plan
+        }
       }
     });
 
-    res.json({ url: session.url });
+    res.json({ url: session.url, id: session.id });
   } catch (error) {
     res.status(500).json({
       error: "Erro ao criar checkout.",

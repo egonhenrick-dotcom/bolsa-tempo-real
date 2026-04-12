@@ -1244,6 +1244,135 @@ async function fetchUsage() {
   return refreshUsage();
 }
 
+
+function isStarterActivePlan() {
+  return currentPlan === "starter" && currentPlanStatus === "active";
+}
+
+function isProActivePlan() {
+  return currentPlan === "pro" && currentPlanStatus === "active";
+}
+
+function hasPaidPlanAccess() {
+  return isUnlimitedAccessUser() || isStarterActivePlan() || isProActivePlan();
+}
+
+function setElementVisibility(el, visible, displayValue = "") {
+  if (!el) return;
+  el.style.display = visible ? displayValue : "none";
+}
+
+function refreshPlanActionButtons() {
+  const starterActive = isStarterActivePlan();
+  const proActive = isProActivePlan();
+  const unlimited = isUnlimitedAccessUser();
+  const visitor = !currentUser;
+
+  if (starterBtn) {
+    if (unlimited || starterActive) {
+      starterBtn.disabled = true;
+      starterBtn.textContent = starterActive
+        ? (currentLang === "en" ? "Starter plan active" : "Plano Starter ativo")
+        : (currentLang === "en" ? "Included in your access" : "Incluso no seu acesso");
+      setElementVisibility(starterBtn, !unlimited, "inline-flex");
+      if (unlimited) setElementVisibility(starterBtn, false);
+    } else {
+      starterBtn.disabled = false;
+      starterBtn.textContent = currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
+      setElementVisibility(starterBtn, true, "inline-flex");
+    }
+  }
+
+  if (proBtn) {
+    if (unlimited || proActive) {
+      proBtn.disabled = true;
+      proBtn.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
+      setElementVisibility(proBtn, false);
+    } else if (starterActive) {
+      proBtn.disabled = false;
+      proBtn.textContent = currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro";
+      setElementVisibility(proBtn, true, "inline-flex");
+    } else {
+      proBtn.disabled = false;
+      proBtn.textContent = currentLang === "en" ? "Subscribe Pro" : "Assinar Pro";
+      setElementVisibility(proBtn, true, "inline-flex");
+    }
+  }
+
+  if (visitor) {
+    if (starterBtn) setElementVisibility(starterBtn, true, "inline-flex");
+    if (proBtn) setElementVisibility(proBtn, true, "inline-flex");
+  }
+}
+
+function refreshSignalUpgradeButton(btnEl) {
+  const unlimited = isUnlimitedAccessUser();
+  const starterActive = isStarterActivePlan();
+
+  if (!btnEl) return;
+
+  if (unlimited) {
+    btnEl.disabled = true;
+    btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
+    setElementVisibility(btnEl, false);
+    return;
+  }
+
+  btnEl.disabled = false;
+  btnEl.textContent = starterActive
+    ? (currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro")
+    : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
+  btnEl.onclick = () => startCheckout("pro");
+  setElementVisibility(btnEl, true, "inline-flex");
+}
+
+function buildPremiumTeaserBlocks(snapshot) {
+  const decision = snapshot?.decision || (currentLang === "en" ? "Strong move detected" : "Movimento forte detectado");
+  const blocks = [
+    {
+      title: currentLang === "en" ? "Complete signal blocked" : "Sinal completo bloqueado",
+      text: currentLang === "en"
+        ? "Entry + exit + ideal timing are available on Pro."
+        : "Entrada + saída + timing ideal estão disponíveis no Pro."
+    },
+    {
+      title: currentLang === "en" ? "Strategic reading blocked" : "Leitura estratégica bloqueada",
+      text: currentLang === "en"
+        ? "See the full reading before the market confirms the move."
+        : "Veja a leitura completa antes do mercado confirmar o movimento."
+    },
+    {
+      title: currentLang === "en" ? "Final confirmation blocked" : "Confirmação final bloqueada",
+      text: currentLang === "en"
+        ? `Pro users see the full confirmation for: ${decision}.`
+        : `Usuários Pro veem a confirmação completa para: ${decision}.`
+    }
+  ];
+
+  return `
+    <div class="premium-teaser-stack" style="display:grid;gap:14px;margin-top:16px;">
+      ${blocks.map((block, index) => `
+        <div class="premium-teaser-card" style="border:1px solid rgba(49,212,113,.25);border-radius:14px;padding:18px;background:rgba(8,15,35,.55);box-shadow:inset 0 0 0 1px rgba(49,212,113,.04);">
+          <div style="font-weight:800;color:${index === 0 ? '#ff6b6b' : '#ffd166'};margin-bottom:8px;">
+            🔒 ${block.title}
+          </div>
+          <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:10px;">
+            ${block.text}
+          </div>
+          <div style="font-size:12px;line-height:1.45;color:#31d471;margin-bottom:12px;">
+            ${currentLang === "en"
+              ? "Pro users see the full signal and enter before the movement gets obvious."
+              : "Usuários Pro veem o sinal completo e entram antes do movimento ficar óbvio."}
+          </div>
+          <button type="button" class="cta-primary" data-upgrade-plan="pro" style="min-width:fit-content;">
+            ${currentLang === "en" ? "Unlock Pro now" : "Desbloquear PRO"}
+          </button>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 function updateFavoriteButton() {
   if (!favBtn) return;
 
@@ -1255,6 +1384,7 @@ function updateFavoriteButton() {
     favBtn.classList.remove("is-favorite");
   }
 }
+
 
 function updatePlanUI() {
   const planName =
@@ -1268,15 +1398,9 @@ function updatePlanUI() {
     if (userBadge) userBadge.textContent = t("visitor");
     if (signOutBtn) signOutBtn.classList.add("hidden");
     if (logoutTopBtn) logoutTopBtn.classList.add("hidden");
-    if (starterBtn) {
-      starterBtn.disabled = false;
-      starterBtn.textContent = currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
-    }
-    if (proBtn) {
-      proBtn.disabled = false;
-      proBtn.textContent = currentLang === "en" ? "Subscribe Pro" : "Assinar Pro";
-    }
     if (portfolioSection) portfolioSection.classList.add("hidden");
+    refreshPlanActionButtons();
+    refreshSignalUpgradeButton(document.getElementById("signalUpgradeBtn"));
     return;
   }
 
@@ -1284,23 +1408,7 @@ function updatePlanUI() {
   if (signOutBtn) signOutBtn.classList.remove("hidden");
   if (logoutTopBtn) logoutTopBtn.classList.remove("hidden");
 
-  if (starterBtn) {
-    const starterActive = currentPlan === "starter" && currentPlanStatus === "active";
-    starterBtn.disabled = starterActive;
-    starterBtn.textContent = starterActive
-      ? (currentLang === "en" ? "Starter plan active" : "Plano Starter ativo")
-      : (currentLang === "en" ? "Subscribe Starter" : "Assinar Starter");
-  }
-
-  if (proBtn) {
-    const proActive = currentPlan === "pro" && currentPlanStatus === "active";
-    proBtn.disabled = proActive;
-    proBtn.textContent = proActive
-      ? (currentLang === "en" ? "Pro plan active" : "Plano Pro ativo")
-      : (currentLang === "en" ? "Subscribe Pro" : "Assinar Pro");
-  }
-
-  if (currentPlan === "pro" && currentPlanStatus === "active") {
+  if (isProActivePlan()) {
     if (portfolioSection) portfolioSection.classList.remove("hidden");
     if (portfolioStatus) portfolioStatus.textContent = t("portfolioEnabled");
   } else {
@@ -1308,10 +1416,14 @@ function updatePlanUI() {
     if (portfolioStatus) portfolioStatus.textContent = t("portfolioLocked");
   }
 
+  refreshPlanActionButtons();
+  refreshSignalUpgradeButton(document.getElementById("signalUpgradeBtn"));
+
   if (isUnlimitedAccessUser()) {
     updateUpgradeBanner({ visible: false });
   }
 }
+
 
 function renderFavorites() {
   const container = document.getElementById("favorites");
@@ -2144,6 +2256,7 @@ function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
 }
 
 
+
 function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
   const card = document.getElementById("marketSignalCard");
   if (!card) return;
@@ -2153,6 +2266,13 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
   const textEl = document.getElementById("marketSignalText");
   const warningEl = document.getElementById("marketSignalWarning");
   const btnEl = document.getElementById("signalUpgradeBtn");
+
+  let teaserWrap = card.querySelector(".premium-teaser-stack-wrap");
+  if (!teaserWrap) {
+    teaserWrap = document.createElement("div");
+    teaserWrap.className = "premium-teaser-stack-wrap";
+    card.appendChild(teaserWrap);
+  }
 
   if (!snapshot) {
     if (symbolEl) symbolEl.textContent = currentLang === "en" ? "Waiting for asset" : "Aguardando ativo";
@@ -2170,9 +2290,8 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
       : (currentLang === "en"
           ? "See the value first. Unlock the advanced features when it makes sense."
           : "Veja o valor primeiro. Desbloqueie os recursos avançados quando fizer sentido.");
-    if (btnEl) btnEl.textContent = isUnlimitedAccessUser()
-      ? (currentLang === "en" ? "Pro plan active" : "Plano Pro ativo")
-      : (currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora");
+    teaserWrap.innerHTML = "";
+    refreshSignalUpgradeButton(btnEl);
     return;
   }
 
@@ -2192,32 +2311,50 @@ function updateMarketSignalCard(snapshot = latestAnalysisSnapshot) {
       : "Entrada sugerida baseada em tendência, volume e momentum.";
   } else if (decision.includes("venda") || decision.includes("sell") || trend === "down") {
     tone = "sell";
-    label = currentLang === "en" ? "🔴 SELL / REDUCE NOW" : "🔴 VENDA / REDUZA AGORA";
+    label = currentLang === "en" ? "🔴 ATTENTION / EXIT" : "🔴 ATENÇÃO / SAÍDA";
     text = currentLang === "en"
-      ? "Pressure is stronger on the selling side. Extra caution is recommended."
-      : "A pressão está mais forte do lado vendedor. Atenção redobrada agora.";
+      ? "Pressure is increasing and the move deserves more caution."
+      : "A pressão aumenta e o movimento merece mais cautela.";
   }
 
-  if (symbolEl) symbolEl.textContent = `${snapshot.symbol} • ${currentLang === "en" ? "Score" : "Score"} ${snapshot.score}/100`;
+  if (symbolEl) symbolEl.textContent = displaySymbol(currentSymbol || snapshot.symbol || "");
   if (labelEl) {
     labelEl.textContent = label;
     labelEl.className = `market-signal-label ${tone}`;
   }
   if (textEl) textEl.textContent = text;
-  if (warningEl) warningEl.textContent = currentLang === "en"
-    ? "You may miss this opportunity if you wait too long."
-    : "⚠️ Você pode perder essa oportunidade se esperar.";
-  if (btnEl) {
-    if (currentPlan === "pro" && currentPlanStatus === "active") {
-      btnEl.textContent = currentLang === "en" ? "Pro plan active" : "Plano Pro ativo";
-      btnEl.disabled = true;
+
+  const unlimited = isUnlimitedAccessUser();
+  const starterActive = isStarterActivePlan();
+
+  if (warningEl) {
+    if (unlimited) {
+      warningEl.textContent = currentLang === "en"
+        ? "Advanced mode enabled. Full signal, timing and premium monitoring released."
+        : "Modo avançado habilitado. Sinal completo, timing e monitoramento premium liberados.";
+    } else if (starterActive) {
+      warningEl.textContent = currentLang === "en"
+        ? "Starter active. Upgrade to Pro to unlock the complete signal, timing and comparison."
+        : "Starter ativo. Faça upgrade para Pro para liberar o sinal completo, timing e comparação.";
     } else {
-      btnEl.textContent = currentLang === "en" ? "Unlock unlimited analyses now" : "Liberar análises ilimitadas agora";
-      btnEl.disabled = false;
-      btnEl.onclick = () => openUpgrade("pro");
+      warningEl.textContent = currentLang === "en"
+        ? "You may miss this opportunity if you wait too long."
+        : "Você pode perder essa oportunidade se esperar.";
     }
   }
+
+  refreshSignalUpgradeButton(btnEl);
+
+  if (unlimited) {
+    teaserWrap.innerHTML = "";
+  } else {
+    teaserWrap.innerHTML = buildPremiumTeaserBlocks(snapshot);
+    teaserWrap.querySelectorAll('[data-upgrade-plan="pro"]').forEach((btn) => {
+      btn.addEventListener("click", () => startCheckout("pro"));
+    });
+  }
 }
+
 
 function renderOverview(quote, snapshot = latestAnalysisSnapshot) {
   if (!marketOverview) return;
@@ -3195,6 +3332,7 @@ function handleCheckoutReturn() {
         : `Pagamento confirmado para o ${planLabel}. Atualizando seu acesso...`);
       setTimeout(() => {
         refreshAuthState("checkout-success").catch(() => {});
+        loadSubscription().catch(() => {});
         refreshUsage().catch(() => {});
       }, 1200);
     } else if (checkout === "cancel") {
@@ -3521,6 +3659,8 @@ function bindEvents() {
   if (logoutTopBtn) logoutTopBtn.onclick = signOut;
   if (starterBtn) starterBtn.onclick = () => startCheckout("starter");
   if (proBtn) proBtn.onclick = () => startCheckout("pro");
+  const signalUpgradeBtn = document.getElementById("signalUpgradeBtn");
+  if (signalUpgradeBtn) signalUpgradeBtn.onclick = () => startCheckout("pro");
   if (addPortfolioBtn) addPortfolioBtn.onclick = savePortfolio;
 
   if (themeToggle) {
@@ -4703,89 +4843,3 @@ async function fetchAdminMine() {
 }
 
 // === BLINDAGEM FINAL APLICADA (TIMEFRAME + SINCRONISMO) ===
-
-
-
-/* ================================
-MONETIZAÇÃO PESADA (AUTO)
-================================ */
-
-// simulação de plano (ajuste depois com backend real)
-function getUserPlan() {
-  return localStorage.getItem("plan") || "free";
-}
-
-function setUserPlan(p){
-  localStorage.setItem("plan", p);
-}
-
-// limite free
-let freeLimit = 3;
-
-function getRemaining() {
-  let used = parseInt(localStorage.getItem("used") || "0");
-  return Math.max(0, freeLimit - used);
-}
-
-function incrementUsage() {
-  let used = parseInt(localStorage.getItem("used") || "0");
-  localStorage.setItem("used", used + 1);
-}
-
-// BLOQUEIO VISUAL
-function applyMonetizationBlock() {
-  const plan = getUserPlan();
-  if(plan === "pro") return;
-
-  const target = document.getElementById("analysisStage");
-  if(!target) return;
-
-  const remaining = getRemaining();
-
-  if(remaining <= 0){
-    target.innerHTML += `
-      <div style="background:#0b1220;border:1px solid #1f2a44;padding:20px;border-radius:12px;margin-top:15px;text-align:center;">
-        <h3 style="color:#ff4d4d;">🔒 Limite atingido</h3>
-        <p>Você já usou todas as análises gratuitas hoje.</p>
-        <button onclick="upgradeToPro()" style="margin-top:10px;padding:10px 20px;background:#00ff88;border:none;border-radius:8px;cursor:pointer;">
-          Desbloquear PRO
-        </button>
-      </div>
-    `;
-  } else {
-    target.innerHTML += `
-      <div style="margin-top:10px;color:#ffaa00;">
-        ⚠️ Restam apenas ${remaining} análises grátis hoje
-      </div>
-    `;
-  }
-}
-
-// UPGRADE
-function upgradeToPro(){
-  alert("Simulação: usuário virou PRO");
-  setUserPlan("pro");
-  location.reload();
-}
-
-// INTERCEPTAR ANALISAR
-const originalSearch = window.handleSearch;
-
-window.handleSearch = async function(){
-  const plan = getUserPlan();
-
-  if(plan !== "pro"){
-    let remaining = getRemaining();
-    if(remaining <= 0){
-      applyMonetizationBlock();
-      return;
-    }
-    incrementUsage();
-  }
-
-  if(originalSearch){
-    await originalSearch();
-  }
-
-  setTimeout(applyMonetizationBlock, 500);
-};

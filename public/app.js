@@ -643,7 +643,63 @@ function isActiveRenderToken(token) {
   return token === pendingRenderToken;
 }
 
+
+function hardResetAnalysisUI() {
+  if (analysisHeroPrice) analysisHeroPrice.textContent = "--";
+  if (analysisHeroMeta) analysisHeroMeta.textContent = currentLang === "en" ? "Preparing analysis..." : "Preparando análise...";
+  if (companyName) companyName.textContent = currentLang === "en" ? "Loading asset..." : "Carregando ativo...";
+  if (companyTicker) companyTicker.textContent = "—";
+  if (companyExchange) companyExchange.textContent = currentLang === "en" ? "Synchronizing..." : "Sincronizando...";
+
+  if (marketOverview) {
+    marketOverview.innerHTML = `
+      <div style="padding:14px;border:1px solid #1f2a44;border-radius:12px;background:#0b1220;">
+        <div style="font-size:12px;color:#00ff88;font-weight:800;margin-bottom:8px;">
+          ${currentLang === "en" ? "Refreshing analysis state" : "Atualizando estado da análise"}
+        </div>
+        <div style="font-size:12px;line-height:1.55;color:#dbeafe;">
+          ${currentLang === "en"
+            ? "Previous visual state cleared to avoid mixed information."
+            : "O estado visual anterior foi limpo para evitar informações misturadas."}
+        </div>
+      </div>
+    `;
+  }
+
+  const panel = document.querySelector(".analysis-hero-right");
+  if (panel) {
+    panel.innerHTML = `
+      <span class="analysis-hero-caption">${currentLang === "en" ? "Refreshing" : "Atualizando"}</span>
+      <span class="analysis-hero-subcaption">${currentLang === "en" ? "Clearing previous visual state..." : "Limpando estado visual anterior..."}</span>
+    `;
+  }
+
+  if (chart) {
+    chart.innerHTML = `
+      <div style="padding:22px;border:1px solid #1f2a44;border-radius:14px;background:#0b1220;text-align:center;">
+        <div style="font-size:14px;font-weight:800;color:#00ff88;margin-bottom:8px;">
+          ${currentLang === "en" ? "Preparing chart..." : "Preparando gráfico..."}
+        </div>
+        <div style="font-size:12px;line-height:1.55;color:#dbeafe;">
+          ${currentLang === "en"
+            ? "The previous chart has been cleared to avoid mixed states."
+            : "O gráfico anterior foi limpo para evitar estados misturados."}
+        </div>
+      </div>
+    `;
+  }
+
+  if (newsList) {
+    newsList.innerHTML = `
+      <div style="padding:16px;border:1px solid #1f2a44;border-radius:12px;background:#0b1220;color:#dbeafe;font-size:12px;line-height:1.5;">
+        ${currentLang === "en" ? "Refreshing news state..." : "Atualizando estado das notícias..."}
+      </div>
+    `;
+  }
+}
+
 function renderAnalysisTransitionShell(mode = "live", symbol = "") {
+  hardResetAnalysisUI();
   const pretty = displaySymbol(symbol || currentSymbol || "");
   const liveMode = mode === "live";
   const title = liveMode
@@ -672,6 +728,11 @@ function renderAnalysisTransitionShell(mode = "live", symbol = "") {
   if (quoteGrid) quoteGrid.classList.remove("hidden");
   if (chartCard) chartCard.classList.remove("hidden");
   if (newsSection) newsSection.classList.remove("hidden");
+
+  if (companyCard) companyCard.style.opacity = "0.55";
+  if (quoteGrid) quoteGrid.style.opacity = "0.55";
+  if (chartCard) chartCard.style.opacity = "0.55";
+  if (newsSection) newsSection.style.opacity = "0.55";
 
   if (chart) {
     chart.innerHTML = `
@@ -762,7 +823,12 @@ function commitSynchronizedAnalysisRender(token, payload) {
   if (newsSection) newsSection.classList.remove("hidden");
   if (newsSymbol) newsSymbol.textContent = displaySymbol(symbol);
 
-  analysisRenderPhase = isDemo ? "demo" : "live";
+  if (companyCard) companyCard.style.opacity = "1";
+  if (quoteGrid) quoteGrid.style.opacity = "1";
+  if (chartCard) chartCard.style.opacity = "1";
+  if (newsSection) newsSection.style.opacity = "1";
+
+  analysisRenderPhase = isDemo ? "demo_ready" : "live_ready";
   return true;
 }
 

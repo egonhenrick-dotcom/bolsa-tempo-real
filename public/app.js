@@ -34,6 +34,8 @@ let latestAnalysisSnapshot = null;
 let latestRenderedQuote = null;
 let latestRenderedProfile = null;
 let isAutoDemoPreview = false;
+let analysisRenderPhase = "idle";
+let pendingRenderToken = 0;
 let isAnalysisPaused = false;
 let tradingViewState = { symbol: "", interval: "", theme: "", locale: "", mode: "" };
 let lastRenderedCompareSymbol = "";
@@ -630,6 +632,140 @@ function ensureTimeframeControls() {
   ensureAnalysisControlButton();
 }
 
+
+function beginAnalysisRenderPhase(mode = "live") {
+  analysisRenderPhase = mode;
+  pendingRenderToken += 1;
+  return pendingRenderToken;
+}
+
+function isActiveRenderToken(token) {
+  return token === pendingRenderToken;
+}
+
+function renderAnalysisTransitionShell(mode = "live", symbol = "") {
+  const pretty = displaySymbol(symbol || currentSymbol || "");
+  const liveMode = mode === "live";
+  const title = liveMode
+    ? (currentLang === "en" ? "Starting your real analysis..." : "Iniciando sua análise real...")
+    : (currentLang === "en" ? "Loading free example..." : "Carregando exemplo grátis...");
+
+  const subtitle = liveMode
+    ? (currentLang === "en"
+        ? "Collecting market data and synchronizing the visual blocks before showing the result."
+        : "Coletando dados do mercado e sincronizando os blocos visuais antes de mostrar o resultado.")
+    : (currentLang === "en"
+        ? "Preparing a visual example so the product never opens empty."
+        : "Preparando um exemplo visual para o produto nunca abrir vazio.");
+
+  if (analysisHeroPrice) analysisHeroPrice.textContent = "--";
+  if (analysisHeroMeta) analysisHeroMeta.textContent = pretty || (currentLang === "en" ? "Loading..." : "Carregando...");
+  if (companyName) companyName.textContent = liveMode
+    ? (currentLang === "en" ? "Real analysis in progress" : "Análise real em andamento")
+    : (currentLang === "en" ? "Free automatic example" : "Exemplo grátis automático");
+  if (companyTicker) companyTicker.textContent = pretty || "—";
+  if (companyExchange) companyExchange.textContent = liveMode
+    ? (currentLang === "en" ? "Synchronizing market blocks" : "Sincronizando blocos do mercado")
+    : (currentLang === "en" ? "Preparing example blocks" : "Preparando blocos do exemplo");
+
+  if (companyCard) companyCard.classList.remove("hidden");
+  if (quoteGrid) quoteGrid.classList.remove("hidden");
+  if (chartCard) chartCard.classList.remove("hidden");
+  if (newsSection) newsSection.classList.remove("hidden");
+
+  if (chart) {
+    chart.innerHTML = `
+      <div style="padding:22px;border:1px solid #1f2a44;border-radius:14px;background:#0b1220;text-align:center;">
+        <div style="font-size:14px;font-weight:800;color:#00ff88;margin-bottom:8px;">
+          ${title}
+        </div>
+        <div style="font-size:12px;line-height:1.55;color:#dbeafe;">
+          ${subtitle}
+        </div>
+      </div>
+    `;
+  }
+
+  if (newsList) {
+    newsList.innerHTML = `
+      <div style="padding:16px;border:1px solid #1f2a44;border-radius:12px;background:#0b1220;color:#dbeafe;font-size:12px;line-height:1.5;">
+        ${currentLang === "en" ? "Waiting for synchronized content..." : "Aguardando conteúdo sincronizado..."}
+      </div>
+    `;
+  }
+
+  updateAnalysisStageBadge(
+    liveMode
+      ? `${currentLang === "en" ? "Real analysis" : "Análise real"} • ${pretty || (currentLang === "en" ? "loading" : "carregando")}`
+      : `${currentLang === "en" ? "Free example" : "Exemplo grátis"} • ${pretty || (currentLang === "en" ? "loading" : "carregando")}`,
+    "neutral"
+  );
+
+  const panel = document.querySelector(".analysis-hero-right");
+  if (panel) {
+    panel.innerHTML = `
+      <span class="analysis-hero-caption">${liveMode ? (currentLang === "en" ? "Real analysis" : "Análise real") : (currentLang === "en" ? "Free example" : "Exemplo grátis")}</span>
+      <span class="analysis-hero-subcaption">${title}</span>
+      <span class="analysis-hero-subcaption">${subtitle}</span>
+    `;
+  }
+
+  if (marketOverview) {
+    marketOverview.innerHTML = `
+      <div style="padding:14px;border:1px solid #1f2a44;border-radius:12px;background:#0b1220;">
+        <div style="font-size:12px;color:#00ff88;font-weight:800;margin-bottom:8px;">
+          ${currentLang === "en" ? "Synchronizing visual blocks" : "Sincronizando blocos visuais"}
+        </div>
+        <div style="font-size:12px;line-height:1.55;color:#dbeafe;">
+          ${currentLang === "en"
+            ? "The interface is being refreshed as a single consistent state."
+            : "A interface está sendo atualizada como um único estado consistente."}
+        </div>
+      </div>
+    `;
+  }
+}
+
+function commitSynchronizedAnalysisRender(token, payload) {
+  if (!isActiveRenderToken(token)) return false;
+
+  const {
+    symbol,
+    quote,
+    profile,
+    candles,
+    news,
+    analysisSnapshot,
+    sourceLabel = "",
+    isDemo = false
+  } = payload;
+
+  currentSymbol = symbol;
+  latestRenderedQuote = { ...quote };
+  latestRenderedProfile = { ...profile };
+  latestAnalysisSnapshot = analysisSnapshot;
+
+  if (companyName) companyName.textContent = profile.name || displaySymbol(symbol);
+  if (companyTicker) companyTicker.textContent = displaySymbol(symbol);
+  if (companyExchange) companyExchange.textContent = `${profile.exchange || t("exchange")}${sourceLabel ? ` • ${sourceLabel}` : ""}`;
+
+  applyQuoteCardValues(quote);
+  renderNews(news);
+  renderOverview(quote, analysisSnapshot);
+  renderSmartPremiumPanel(analysisSnapshot);
+  updateAnalysisHero(quote, symbol);
+  updateMarketSignalCard(analysisSnapshot);
+
+  if (companyCard) companyCard.classList.remove("hidden");
+  if (quoteGrid) quoteGrid.classList.remove("hidden");
+  if (chartCard) chartCard.classList.remove("hidden");
+  if (newsSection) newsSection.classList.remove("hidden");
+  if (newsSymbol) newsSymbol.textContent = displaySymbol(symbol);
+
+  analysisRenderPhase = isDemo ? "demo" : "live";
+  return true;
+}
+
 function setChartLoadingState(loading) {
   if (!chartCard || !chart) return;
 
@@ -1007,29 +1143,26 @@ function getStaticDemoPayload(symbol = "AAPL") {
 
 function renderFreeDemoPayload(normalized, quote, profile, candles, news, sourceLabel = "demo") {
   isAutoDemoPreview = true;
-  currentSymbol = normalized;
-  latestRenderedQuote = { ...quote };
-  latestRenderedProfile = { ...profile };
+  const renderToken = beginAnalysisRenderPhase("demo");
+  renderAnalysisTransitionShell("demo", normalized);
 
-  if (companyName) companyName.textContent = profile.name || displaySymbol(normalized);
-  if (companyTicker) companyTicker.textContent = displaySymbol(normalized);
-  if (companyExchange) companyExchange.textContent = `${profile.exchange || t("exchange")} • ${sourceLabel}`;
-
-  applyQuoteCardValues(quote);
-  drawChart(candles, null, { forceReload: true });
   const analysisSnapshot = buildAnalysisSnapshot(normalized, quote, candles, news, profile);
-  latestAnalysisSnapshot = analysisSnapshot;
-  renderNews(news);
-  renderOverview(quote, analysisSnapshot);
-  renderSmartPremiumPanel(analysisSnapshot);
-  updateAnalysisStageBadge(`${currentLang === "en" ? "Demo without spend" : "Demo sem gasto"} • ${displaySymbol(normalized)}`, "success");
-  updateChartHeader("");
+  const committed = commitSynchronizedAnalysisRender(renderToken, {
+    symbol: normalized,
+    quote,
+    profile,
+    candles,
+    news,
+    analysisSnapshot,
+    sourceLabel,
+    isDemo: true
+  });
 
-  if (companyCard) companyCard.classList.remove("hidden");
-  if (quoteGrid) quoteGrid.classList.remove("hidden");
-  if (chartCard) chartCard.classList.remove("hidden");
-  if (newsSection) newsSection.classList.remove("hidden");
-  if (newsSymbol) newsSymbol.textContent = displaySymbol(normalized);
+  if (!committed) return;
+
+  drawChart(candles, null, { forceReload: true });
+  updateAnalysisStageBadge(`${currentLang === "en" ? "Free automatic example" : "Exemplo grátis automático"} • ${displaySymbol(normalized)}`, "success");
+  updateChartHeader("");
 }
 
 async function openFreeDemo(symbol = "AAPL") {
@@ -3532,6 +3665,7 @@ function buildPreviewQuoteFromCandles(candles = {}, existingQuote = {}) {
 
 async function handleSearch(silentRefresh = false) {
   isAutoDemoPreview = false;
+  const renderToken = beginAnalysisRenderPhase("live");
   if (isSearchingNow) return;
   const symbol = normalizeSymbol(symbolInput?.value);
   const compareSymbol = normalizeSymbol(compareInput?.value);
@@ -3585,6 +3719,7 @@ async function handleSearch(silentRefresh = false) {
   }
 
   if (!silentRefresh) {
+    renderAnalysisTransitionShell("live", symbol);
     updateAnalysisStageBadge(`${displaySymbol(symbol)} • ${currentLang === "en" ? "Analyzing" : "Analisando"}`, "info");
     setStatus(`${currentLang === "en" ? "Analyzing" : "Analisando"} ${displaySymbol(symbol)}...`);
   }
@@ -3649,10 +3784,6 @@ async function handleSearch(silentRefresh = false) {
       companyExchange.textContent = `${exchangeLabel} • ${allowPreviewMode ? (currentLang === "en" ? "Preview mode" : "Modo visual") : getQuoteSourceLabel(quote)}`;
     }
 
-    latestRenderedQuote = { ...quote };
-    latestRenderedProfile = { ...profile };
-    applyQuoteCardValues(quote);
-
     if (requestId !== activeSearchRequestId) return;
 
     const candleSeries = Array.isArray(candles?.c) ? candles.c : [];
@@ -3663,6 +3794,25 @@ async function handleSearch(silentRefresh = false) {
       compareSymbol,
       baseSymbol: symbol
     });
+
+    const analysisSnapshot = buildAnalysisSnapshot(symbol, quote, candles, news, profile);
+    const committed = commitSynchronizedAnalysisRender(renderToken, {
+      symbol,
+      quote,
+      profile,
+      candles,
+      news,
+      analysisSnapshot,
+      sourceLabel: allowPreviewMode ? (currentLang === "en" ? "Preview mode" : "Modo visual") : getQuoteSourceLabel(quote),
+      isDemo: false
+    });
+
+    if (!committed) return;
+
+    saveAnalysisSnapshot(analysisSnapshot);
+    afterSuccessfulAnalysis(symbol);
+    ensureAnalysisControlButton();
+    syncActiveMarketButtons();
 
     if (chartRefreshPlan.reload) {
       drawChart(candles, compareCandles, { forceReload: chartRefreshPlan.forceReload === true });
@@ -3679,26 +3829,10 @@ async function handleSearch(silentRefresh = false) {
       const chartInfo = [candles?.source || "chart", candles?.interval || ""].filter(Boolean).join(" • ");
       setStatus(`${t("updatedFor")} ${displaySymbol(symbol)} • ${getQuoteSourceLabel(quote)} • gráfico ${chartInfo}.`);
     }
-    const analysisSnapshot = buildAnalysisSnapshot(symbol, quote, candles, news, profile);
-    latestAnalysisSnapshot = analysisSnapshot;
-    saveAnalysisSnapshot(analysisSnapshot);
 
-    renderNews(news);
-    renderOverview(quote, analysisSnapshot);
-    renderSmartPremiumPanel(analysisSnapshot);
-    afterSuccessfulAnalysis(symbol);
-    ensureAnalysisControlButton();
-    syncActiveMarketButtons();
-
-    if (newsSymbol) newsSymbol.textContent = displaySymbol(symbol);
     updateChartHeader(compareCandles?.c?.length ? compareSymbol : "");
 
     if (requestId !== activeSearchRequestId) return;
-
-    if (companyCard) companyCard.classList.remove("hidden");
-    if (quoteGrid) quoteGrid.classList.remove("hidden");
-    if (chartCard) chartCard.classList.remove("hidden");
-    if (newsSection) newsSection.classList.remove("hidden");
 
     const usageAfter = await refreshUsage();
 

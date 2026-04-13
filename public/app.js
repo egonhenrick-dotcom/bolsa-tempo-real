@@ -910,10 +910,144 @@ function ensureDataTrustFooter() {
     : "Dados de mercado fornecidos por Yahoo Finance (o plano gratuito pode ter atraso).";
 }
 
-async function openFreeDemo(symbol = "PETR4") {
-  const normalized = normalizeSymbol(symbol || "PETR4");
+function buildStaticDemoCandles(basePrice = 260.48) {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const closes = [
+    basePrice - 4.1,
+    basePrice - 2.9,
+    basePrice - 1.7,
+    basePrice - 0.9,
+    basePrice - 1.8,
+    basePrice - 0.6,
+    basePrice + 0.4,
+    basePrice + 1.2,
+    basePrice + 0.5,
+    basePrice
+  ].map((n) => Number(n.toFixed(2)));
+
+  const t = closes.map((_, i) => Math.floor((now - ((closes.length - i) * day)) / 1000));
+  const o = closes.map((value, i) => Number((i === 0 ? value - 0.8 : closes[i - 1]).toFixed(2)));
+  const h = closes.map((value, i) => Number((Math.max(value, o[i]) + 0.9).toFixed(2)));
+  const l = closes.map((value, i) => Number((Math.min(value, o[i]) - 0.9).toFixed(2)));
+  const v = closes.map((_, i) => 1000000 + (i * 85000));
+
+  return { s: "ok", t, o, h, l, c: closes, v };
+}
+
+function getStaticDemoPayload(symbol = "AAPL") {
+  const normalized = normalizeSymbol(symbol || "AAPL");
+  const pretty = displaySymbol(normalized);
+
+  if (pretty === "PETR4") {
+    const price = 32.84;
+    return {
+      quote: {
+        c: price,
+        d: -0.18,
+        dp: -0.55,
+        h: 33.18,
+        l: 32.41,
+        o: 32.96,
+        pc: 33.02,
+        source: "demo"
+      },
+      profile: {
+        name: "Petróleo Brasileiro S.A. - Petrobras",
+        exchange: "B3"
+      },
+      candles: buildStaticDemoCandles(price),
+      news: [
+        {
+          headline: "PETR4 demo: fluxo de compra em zona de suporte",
+          summary: "Exemplo visual para mostrar como a leitura aparece logo ao abrir o site.",
+          url: "#"
+        },
+        {
+          headline: "Estrutura de alta segue monitorada",
+          summary: "Esta demonstração não consome análise grátis e serve apenas para apresentar o produto.",
+          url: "#"
+        }
+      ]
+    };
+  }
+
+  const price = 260.48;
+  return {
+    quote: {
+      c: price,
+      d: -0.08,
+      dp: -0.03,
+      h: 262.19,
+      l: 259.02,
+      o: 260.12,
+      pc: 260.56,
+      source: "demo"
+    },
+    profile: {
+      name: "Apple Inc",
+      exchange: "NASDAQ"
+    },
+    candles: buildStaticDemoCandles(price),
+    news: [
+      {
+        headline: "AAPL demo: pullback dentro de estrutura de alta",
+        summary: "Exemplo automático carregado para mostrar sinal, contexto e plano logo na primeira visita.",
+        url: "#"
+      },
+      {
+        headline: "Leitura probabilística com contexto visível",
+        summary: "A versão de demonstração permite entender o produto sem consumir análise grátis.",
+        url: "#"
+      }
+    ]
+  };
+}
+
+function renderFreeDemoPayload(normalized, quote, profile, candles, news, sourceLabel = "demo") {
+  currentSymbol = normalized;
+  latestRenderedQuote = { ...quote };
+  latestRenderedProfile = { ...profile };
+
+  if (companyName) companyName.textContent = profile.name || displaySymbol(normalized);
+  if (companyTicker) companyTicker.textContent = displaySymbol(normalized);
+  if (companyExchange) companyExchange.textContent = `${profile.exchange || t("exchange")} • ${sourceLabel}`;
+
+  applyQuoteCardValues(quote);
+  drawChart(candles, null, { forceReload: true });
+  const analysisSnapshot = buildAnalysisSnapshot(normalized, quote, candles, news, profile);
+  latestAnalysisSnapshot = analysisSnapshot;
+  renderNews(news);
+  renderOverview(quote, analysisSnapshot);
+  renderSmartPremiumPanel(analysisSnapshot);
+  updateAnalysisStageBadge(`${currentLang === "en" ? "Demo without spend" : "Demo sem gasto"} • ${displaySymbol(normalized)}`, "success");
+  updateChartHeader("");
+
+  if (companyCard) companyCard.classList.remove("hidden");
+  if (quoteGrid) quoteGrid.classList.remove("hidden");
+  if (chartCard) chartCard.classList.remove("hidden");
+  if (newsSection) newsSection.classList.remove("hidden");
+  if (newsSymbol) newsSymbol.textContent = displaySymbol(normalized);
+}
+
+async function openFreeDemo(symbol = "AAPL") {
+  const normalized = normalizeSymbol(symbol || "AAPL");
+  const staticPayload = getStaticDemoPayload(normalized);
 
   try {
+    renderFreeDemoPayload(
+      normalized,
+      staticPayload.quote,
+      staticPayload.profile,
+      staticPayload.candles,
+      staticPayload.news,
+      currentLang === "en" ? "Instant demo preview" : "Demo instantânea"
+    );
+
+    setStatus(currentLang === "en"
+      ? `${displaySymbol(normalized)} demo opened without consuming a free analysis.`
+      : `Demo ${displaySymbol(normalized)} aberta sem consumir análise grátis.`);
+
     const results = await Promise.allSettled([
       fetchJSON(`/api/quote/${normalized}`),
       fetchJSON(`/api/profile/${normalized}`),
@@ -923,50 +1057,50 @@ async function openFreeDemo(symbol = "PETR4") {
 
     let quote = results[0].status === "fulfilled"
       ? results[0].value
-      : { c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, error: "QUOTE_UNAVAILABLE", source: "preview" };
+      : staticPayload.quote;
+
     const profile = results[1].status === "fulfilled"
       ? results[1].value
-      : { name: displaySymbol(normalized), exchange: t("exchange") };
-    const candles = results[2].status === "fulfilled"
+      : staticPayload.profile;
+
+    const candles = results[2].status === "fulfilled" && Array.isArray(results[2].value?.c) && results[2].value.c.length
       ? results[2].value
-      : { s: "no_data", c: [] };
-    const news = results[3].status === "fulfilled"
+      : staticPayload.candles;
+
+    const news = results[3].status === "fulfilled" && Array.isArray(results[3].value) && results[3].value.length
       ? results[3].value
-      : [];
+      : staticPayload.news;
 
     if (!hasValidQuoteData(quote)) {
       quote = buildPreviewQuoteFromCandles(candles, quote);
     }
 
-    currentSymbol = normalized;
-    latestRenderedQuote = { ...quote };
-    latestRenderedProfile = { ...profile };
+    if (!hasValidQuoteData(quote)) {
+      quote = staticPayload.quote;
+    }
 
-    if (companyName) companyName.textContent = profile.name || displaySymbol(normalized);
-    if (companyTicker) companyTicker.textContent = displaySymbol(normalized);
-    if (companyExchange) companyExchange.textContent = `${profile.exchange || t("exchange")} • ${currentLang === "en" ? "Demo preview" : "Demo visual"}`;
-
-    applyQuoteCardValues(quote);
-    drawChart(candles, null, { forceReload: true });
-    const analysisSnapshot = buildAnalysisSnapshot(normalized, quote, candles, news, profile);
-    latestAnalysisSnapshot = analysisSnapshot;
-    renderNews(news);
-    renderOverview(quote, analysisSnapshot);
-    renderSmartPremiumPanel(analysisSnapshot);
-    updateAnalysisStageBadge(`${currentLang === "en" ? "Demo without spend" : "Demo sem gasto"} • ${displaySymbol(normalized)}`, "success");
-    updateChartHeader("");
-
-    if (companyCard) companyCard.classList.remove("hidden");
-    if (quoteGrid) quoteGrid.classList.remove("hidden");
-    if (chartCard) chartCard.classList.remove("hidden");
-    if (newsSection) newsSection.classList.remove("hidden");
-    if (newsSymbol) newsSymbol.textContent = displaySymbol(normalized);
+    renderFreeDemoPayload(
+      normalized,
+      quote,
+      profile,
+      candles,
+      news,
+      currentLang === "en" ? "Live/demo fallback" : "Fallback live/demo"
+    );
+  } catch (error) {
+    console.error("free demo render error:", error?.message || error);
+    renderFreeDemoPayload(
+      normalized,
+      staticPayload.quote,
+      staticPayload.profile,
+      staticPayload.candles,
+      staticPayload.news,
+      currentLang === "en" ? "Fallback demo" : "Demo fallback"
+    );
 
     setStatus(currentLang === "en"
-      ? `${displaySymbol(normalized)} demo opened without consuming a free analysis.`
-      : `Demo ${displaySymbol(normalized)} aberta sem consumir análise grátis.`);
-  } catch (error) {
-    setStatus(error?.message || (currentLang === "en" ? "Unable to open demo right now." : "Não foi possível abrir a demo agora."));
+      ? `${displaySymbol(normalized)} demo opened in fallback mode without consuming a free analysis.`
+      : `Demo ${displaySymbol(normalized)} aberta em modo fallback sem consumir análise grátis.`);
   }
 }
 
@@ -990,7 +1124,7 @@ function ensureFreeDemoCard() {
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
       <div>
         <div style="font-weight:800;color:#31d471;margin-bottom:4px;">${currentLang === "en" ? "Demo without spending analysis" : "Demo sem gastar análise"}</div>
-        <div style="font-size:13px;line-height:1.5;color:#dbeafe;">${currentLang === "en" ? "Example always visible with PETR4. Demonstration only and does not consume your daily analyses." : "Exemplo sempre visível com PETR4. Demonstração apenas e não consome suas análises diárias."}</div>
+        <div style="font-size:13px;line-height:1.5;color:#dbeafe;">${currentLang === "en" ? "AAPL demo opens automatically, and you can also switch to PETR4 without consuming daily analyses." : "A demo de AAPL abre automaticamente, e você também pode trocar para PETR4 sem consumir análises diárias."}</div>
       </div>
       <button type="button" class="neutral-btn" id="freeDemoBtn" style="min-width:fit-content;">${currentLang === "en" ? "Open PETR4 demo" : "Abrir demo PETR4"}</button>
     </div>
@@ -4400,13 +4534,13 @@ async function init() {
   syncActiveMarketButtons();
   updateAnalysisControlButton();
 
-  const bootSymbol = normalizeSymbol(DEFAULT_FREE_PREVIEW_SYMBOL || "AAPL");
+  const bootSymbol = normalizeSymbol(symbolInput?.value || DEFAULT_FREE_PREVIEW_SYMBOL);
   if (symbolInput && bootSymbol) {
     symbolInput.value = displaySymbol(bootSymbol);
     setTimeout(() => {
       if (!isSearchingNow) {
-        openFreeDemo(bootSymbol).catch((error) => {
-          console.error('boot free demo error:', error?.message || error);
+        handleSearch(false).catch((error) => {
+          console.error('boot preview error:', error?.message || error);
         });
       }
     }, 180);
@@ -5365,11 +5499,28 @@ function bindDiagnosticsEvents() {
   }
 }
 
+
 init();
+
+window.addEventListener("load", () => {
+  setTimeout(() => {
+    try {
+      const priceIsEmpty = !currentSymbol || (analysisHeroPrice && String(analysisHeroPrice.textContent || "").includes("--"));
+      if (priceIsEmpty && typeof openFreeDemo === "function") {
+        openFreeDemo(DEFAULT_FREE_PREVIEW_SYMBOL || "AAPL").catch((error) => {
+          console.error("window load demo fallback error:", error?.message || error);
+        });
+      }
+    } catch (error) {
+      console.error("window load demo fallback failed:", error?.message || error);
+    }
+  }, 700);
+});
 
 // =========================
 // FASE 2 — TERMINAL LAYOUT PREMIUM
 // =========================
+
 
 function syncActiveMarketButtons() {
   const active = displaySymbol(normalizeSymbol(currentSymbol || ""));

@@ -963,8 +963,8 @@ async function openFreeDemo(symbol = "PETR4") {
     if (newsSymbol) newsSymbol.textContent = displaySymbol(normalized);
 
     setStatus(currentLang === "en"
-      ? `PETR4 demo opened without consuming a free analysis.`
-      : `Demo PETR4 aberta sem consumir análise grátis.`);
+      ? `${displaySymbol(normalized)} demo opened without consuming a free analysis.`
+      : `Demo ${displaySymbol(normalized)} aberta sem consumir análise grátis.`);
   } catch (error) {
     setStatus(error?.message || (currentLang === "en" ? "Unable to open demo right now." : "Não foi possível abrir a demo agora."));
   }
@@ -4400,13 +4400,13 @@ async function init() {
   syncActiveMarketButtons();
   updateAnalysisControlButton();
 
-  const bootSymbol = normalizeSymbol(symbolInput?.value || DEFAULT_FREE_PREVIEW_SYMBOL);
+  const bootSymbol = normalizeSymbol(DEFAULT_FREE_PREVIEW_SYMBOL || "AAPL");
   if (symbolInput && bootSymbol) {
     symbolInput.value = displaySymbol(bootSymbol);
     setTimeout(() => {
       if (!isSearchingNow) {
-        handleSearch(false).catch((error) => {
-          console.error('boot preview error:', error?.message || error);
+        openFreeDemo(bootSymbol).catch((error) => {
+          console.error('boot free demo error:', error?.message || error);
         });
       }
     }, 180);

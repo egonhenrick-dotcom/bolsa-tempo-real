@@ -2477,33 +2477,57 @@ function getTradePlanFromSnapshot(snapshot = latestAnalysisSnapshot) {
       entry: 0,
       stop: 0,
       target: 0,
+      target1: 0,
+      target2: 0,
       riskPercent: 0,
       rewardPercent: 0,
-      riskReward: "0.0"
+      rewardPercent1: 0,
+      rewardPercent2: 0,
+      riskReward: "0.0",
+      riskReward1: "0.0",
+      riskReward2: "0.0"
     };
   }
 
   const entry = price;
   const fallbackStop = price * (1 - Math.max(0.008, Math.min(0.03, (volatilityPercent || 1.5) / 100)));
-  const fallbackTarget = price * (1 + Math.max(0.018, Math.min(0.06, ((volatilityPercent || 1.8) * 1.35) / 100)));
-
   let stop = support > 0 && support < entry ? support : fallbackStop;
-  let target = resistance > entry ? resistance : fallbackTarget;
-
   if (stop >= entry) stop = fallbackStop;
-  if (target <= entry) target = fallbackTarget;
+
+  const riskDistance = Math.max(0.01, entry - stop);
+  const historicalMovePercent = Math.max(1.8, Math.min(4.2, (volatilityPercent || 1.8) * 1.25));
+
+  const target1ByRR = entry + (riskDistance * 1.15);
+  const target1ByResistance = resistance > entry ? resistance : 0;
+  let target1 = Math.max(target1ByRR, target1ByResistance, entry + (entry * 0.01));
+
+  const target2ByRR = entry + (riskDistance * 2.2);
+  const target2ByHistory = entry * (1 + (historicalMovePercent / 100));
+  let target2 = Math.max(target2ByRR, target2ByHistory, target1 + riskDistance);
+
+  if (target2 <= target1) {
+    target2 = target1 + (riskDistance * 1.1);
+  }
 
   const riskPercent = entry > 0 ? Math.max(0, ((entry - stop) / entry) * 100) : 0;
-  const rewardPercent = entry > 0 ? Math.max(0, ((target - entry) / entry) * 100) : 0;
-  const riskReward = riskPercent > 0 ? (rewardPercent / riskPercent).toFixed(1) : "0.0";
+  const rewardPercent1 = entry > 0 ? Math.max(0, ((target1 - entry) / entry) * 100) : 0;
+  const rewardPercent2 = entry > 0 ? Math.max(0, ((target2 - entry) / entry) * 100) : 0;
+  const riskReward1 = riskPercent > 0 ? (rewardPercent1 / riskPercent).toFixed(1) : "0.0";
+  const riskReward2 = riskPercent > 0 ? (rewardPercent2 / riskPercent).toFixed(1) : "0.0";
 
   return {
     entry,
     stop,
-    target,
+    target: target2,
+    target1,
+    target2,
     riskPercent,
-    rewardPercent,
-    riskReward
+    rewardPercent: rewardPercent2,
+    rewardPercent1,
+    rewardPercent2,
+    riskReward: riskReward2,
+    riskReward1,
+    riskReward2
   };
 }
 
@@ -2558,7 +2582,8 @@ function renderTradePlanBlock(snapshot = latestAnalysisSnapshot, options = {}) {
   const title = currentLang === "en" ? "Suggested trade plan" : "Plano sugerido";
   const entryLabel = currentLang === "en" ? "Entry" : "Entrada";
   const stopLabel = currentLang === "en" ? "Stop" : "Stop";
-  const targetLabel = currentLang === "en" ? "Target" : "Alvo";
+  const target1Label = currentLang === "en" ? "Target 1" : "Alvo 1";
+  const target2Label = currentLang === "en" ? "Target 2" : "Alvo 2";
   const riskLabel = currentLang === "en" ? "Risk" : "Risco";
   const rewardLabel = currentLang === "en" ? "Potential return" : "Retorno potencial";
   const ratioLabel = currentLang === "en" ? "Risk/Reward" : "Risco/Retorno";
@@ -2568,18 +2593,19 @@ function renderTradePlanBlock(snapshot = latestAnalysisSnapshot, options = {}) {
       ? (currentLang === "en" ? "This setup is stronger than the average free read." : "Esse setup está mais forte do que a média das leituras grátis.")
       : (currentLang === "en" ? "Use this as a fast decision map." : "Use isso como um mapa rápido de decisão.");
 
-  const targetValue = hideTarget
-    ? (currentLang === "en" ? "Exact target on Pro" : "Alvo exato no Pro")
-    : formatPrice(plan.target);
+  const target1Value = formatPrice(plan.target1);
+  const target2Value = hideTarget
+    ? (currentLang === "en" ? "Extended target on Pro" : "Alvo estendido no Pro")
+    : formatPrice(plan.target2);
 
   const footline = phase === "validation"
     ? (currentLang === "en"
-        ? "Validation unlocked. Entry structure is already clearer than on analysis 1."
-        : "Validação liberada. A estrutura de entrada já está mais clara do que na análise 1.")
+        ? "Validation unlocked. Conservative target secures speed, extended target restores healthy math."
+        : "Validação liberada. O alvo conservador preserva velocidade, e o alvo estendido corrige a matemática do trade.")
     : phase === "almost"
       ? (currentLang === "en"
-          ? "One step away from the exact trigger, timing and full exit."
-          : "A um passo do gatilho exato, timing e saída completa.")
+          ? "One step away from the exact trigger, timing and extended exit."
+          : "A um passo do gatilho exato, timing e saída estendida.")
       : (currentLang === "en"
           ? "The complete decision flow is unlocked on the paid version."
           : "O fluxo completo da decisão é liberado na versão paga.");
@@ -2597,10 +2623,12 @@ function renderTradePlanBlock(snapshot = latestAnalysisSnapshot, options = {}) {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px 12px;">
         <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${entryLabel}:</strong><br>${formatPrice(plan.entry)}</div>
         <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${stopLabel}:</strong><br>${formatPrice(plan.stop)}</div>
-        <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${targetLabel}:</strong><br>${targetValue}</div>
+        <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${target1Label}:</strong><br>${target1Value}</div>
+        <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${target2Label}:</strong><br>${target2Value}</div>
         <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${riskLabel}:</strong><br>-${plan.riskPercent.toFixed(1)}%</div>
-        <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${rewardLabel}:</strong><br>+${plan.rewardPercent.toFixed(1)}%</div>
-        <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${ratioLabel}:</strong><br>${plan.riskReward}x</div>
+        <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${rewardLabel}:</strong><br>+${plan.rewardPercent2.toFixed(1)}%</div>
+        <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${ratioLabel} 1:</strong><br>${plan.riskReward1}x</div>
+        <div style="font-size:13px;color:#e5e7eb;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;"><strong>${ratioLabel} 2:</strong><br>${hideTarget ? "PRO" : `${plan.riskReward2}x`}</div>
       </div>
       <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-top:12px;">
         ⚠️ ${footline}
@@ -2623,8 +2651,8 @@ function renderHardPaywallBlock(snapshot = latestAnalysisSnapshot) {
       </div>
       <div style="font-size:13px;line-height:1.55;color:#00ff88;margin-bottom:10px;">
         ✔ ${currentLang === "en"
-          ? `Estimated plan already visible: entry ${formatPrice(plan.entry)} • stop ${formatPrice(plan.stop)}`
-          : `Plano estimado já visível: entrada ${formatPrice(plan.entry)} • stop ${formatPrice(plan.stop)}`}
+          ? `Estimated plan already visible: entry ${formatPrice(plan.entry)} • stop ${formatPrice(plan.stop)} • target 1 ${formatPrice(plan.target1)}`
+          : `Plano estimado já visível: entrada ${formatPrice(plan.entry)} • stop ${formatPrice(plan.stop)} • alvo 1 ${formatPrice(plan.target1)}`}
       </div>
       <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:14px;">
         ⚠️ ${currentLang === "en"

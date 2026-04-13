@@ -1515,6 +1515,7 @@ function buildPremiumTeaserBlocks(snapshot) {
               ? "Use the next analysis to validate whether this setup deserves attention."
               : "Use a próxima análise para validar se esse setup realmente merece atenção."}
           </div>
+          ${renderConfidenceBlock(snapshot)}
         </div>
       </div>
     `;
@@ -1537,6 +1538,7 @@ function buildPremiumTeaserBlocks(snapshot) {
               ? "Setups like this have shown good recent performance."
               : "Setups como este tiveram boa performance recente."}
           </div>
+          ${renderTradePlanBlock(snapshot, { phase: "validation" })}
         </div>
       </div>
     `;
@@ -1555,14 +1557,13 @@ function buildPremiumTeaserBlocks(snapshot) {
               : `Sinal identificado. Tendência confirmada. Estrutura de entrada detectada para ${symbol}.`}
           </div>
           <div style="font-size:13px;line-height:1.55;color:#00ff88;margin-bottom:8px;">
-            ✔ ${currentLang === "en" ? "Exact entry + timing + exit are on the next level." : "Entrada exata + timing + saída estão no próximo nível."}
+            ✔ ${currentLang === "en" ? "Entry, stop and timing are almost fully unlocked." : "Entrada, stop e timing estão quase totalmente liberados."}
           </div>
           <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:12px;">
             ⚠️ ${currentLang === "en" ? "Pro users see this before the move becomes obvious." : "Usuários PRO veem isso antes do movimento começar."}
           </div>
-          <button type="button" class="cta-primary" data-upgrade-plan="pro" style="min-width:fit-content;">
-            ${currentLang === "en" ? "See full analysis now" : "Ver análise completa agora"}
-          </button>
+          ${renderTradePlanBlock(snapshot, { phase: "almost", hideTarget: true })}
+          ${renderHardPaywallBlock(snapshot)}
         </div>
       </div>
     `;
@@ -1589,9 +1590,8 @@ function buildPremiumTeaserBlocks(snapshot) {
             ? "Keep the visible chart, but unlock new full reads with Pro."
             : "Mantenha o gráfico visível, mas libere novas leituras completas com o Pro."}
         </div>
-        <button type="button" class="cta-primary" data-upgrade-plan="pro" style="min-width:fit-content;">
-          ${currentLang === "en" ? "Unlock complete access" : "Desbloquear acesso completo"}
-        </button>
+        ${renderTradePlanBlock(snapshot, { phase: "locked", hideTarget: true })}
+        ${renderHardPaywallBlock(snapshot)}
       </div>
     </div>
   `;
@@ -2461,6 +2461,152 @@ function buildAnalysisSnapshot(symbol, quote, candles, news = [], profile = {}) 
   };
 }
 
+
+function getTradePlanFromSnapshot(snapshot = latestAnalysisSnapshot) {
+  const price = Number(snapshot?.price || 0);
+  const support = Number(snapshot?.support || 0);
+  const resistance = Number(snapshot?.resistance || 0);
+  const volatilityPercent = Number(snapshot?.volatilityPercent || 0);
+
+  if (!price) {
+    return {
+      entry: 0,
+      stop: 0,
+      target: 0,
+      riskPercent: 0,
+      rewardPercent: 0,
+      riskReward: "0.0"
+    };
+  }
+
+  const entry = price;
+  const fallbackStop = price * (1 - Math.max(0.008, Math.min(0.03, (volatilityPercent || 1.5) / 100)));
+  const fallbackTarget = price * (1 + Math.max(0.018, Math.min(0.06, ((volatilityPercent || 1.8) * 1.35) / 100)));
+
+  let stop = support > 0 && support < entry ? support : fallbackStop;
+  let target = resistance > entry ? resistance : fallbackTarget;
+
+  if (stop >= entry) stop = fallbackStop;
+  if (target <= entry) target = fallbackTarget;
+
+  const riskPercent = entry > 0 ? Math.max(0, ((entry - stop) / entry) * 100) : 0;
+  const rewardPercent = entry > 0 ? Math.max(0, ((target - entry) / entry) * 100) : 0;
+  const riskReward = riskPercent > 0 ? (rewardPercent / riskPercent).toFixed(1) : "0.0";
+
+  return {
+    entry,
+    stop,
+    target,
+    riskPercent,
+    rewardPercent,
+    riskReward
+  };
+}
+
+function renderConfidenceBlock(snapshot = latestAnalysisSnapshot) {
+  if (!snapshot) return "";
+
+  const baseConfidence = Math.max(52, Math.min(89, Math.round((Number(snapshot.score || 0) * 0.62) + 20)));
+  const setupLine = currentLang === "en"
+    ? "Signal based on trend structure, recent pressure and momentum confirmation."
+    : "Sinal baseado em estrutura de tendência, pressão recente e confirmação do momentum.";
+
+  return `
+    <div style="margin-top:12px;border:1px solid #1f2a44;padding:14px;border-radius:12px;background:#0b1220;">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.02em;color:#93c5fd;margin-bottom:8px;">
+        📈 ${currentLang === "en" ? "Confidence reading" : "Leitura de confiança"}
+      </div>
+      <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:8px;">
+        ${setupLine}
+      </div>
+      <div style="font-size:12px;line-height:1.5;color:#ffaa00;">
+        ⚠️ ${currentLang === "en"
+          ? `Estimated confidence: ${baseConfidence}% • This is a probabilistic read, not a guarantee.`
+          : `Confiança estimada: ${baseConfidence}% • Esta é uma leitura probabilística, não uma garantia.`}
+      </div>
+    </div>
+  `;
+}
+
+function renderTradePlanBlock(snapshot = latestAnalysisSnapshot, options = {}) {
+  if (!snapshot) return "";
+
+  const {
+    phase = getConversionPhase(),
+    hideTarget = false,
+    compact = false
+  } = options;
+
+  const plan = getTradePlanFromSnapshot(snapshot);
+  const title = currentLang === "en" ? "Suggested trade plan" : "Plano sugerido";
+  const entryLabel = currentLang === "en" ? "Entry" : "Entrada";
+  const stopLabel = currentLang === "en" ? "Stop" : "Stop";
+  const targetLabel = currentLang === "en" ? "Target" : "Alvo";
+  const riskLabel = currentLang === "en" ? "Risk" : "Risco";
+  const rewardLabel = currentLang === "en" ? "Potential return" : "Retorno potencial";
+  const ratioLabel = currentLang === "en" ? "Risk/Reward" : "Risco/Retorno";
+
+  const targetValue = hideTarget
+    ? (currentLang === "en" ? "Unlocked on Pro" : "Liberado no Pro")
+    : formatPrice(plan.target);
+
+  const footline = phase === "validation"
+    ? (currentLang === "en"
+        ? "This setup is getting stronger than the average free analysis."
+        : "Esse setup está ficando mais forte do que a média das análises grátis.")
+    : phase === "almost"
+      ? (currentLang === "en"
+          ? "You are one step away from the exact trigger and full exit logic."
+          : "Você está a um passo do gatilho exato e da lógica completa de saída.")
+      : (currentLang === "en"
+          ? "The complete decision flow is unlocked on the paid version."
+          : "O fluxo completo da decisão é liberado na versão paga.");
+
+  return `
+    <div style="margin-top:12px;border:1px solid #1f2a44;padding:${compact ? "14px" : "16px"};border-radius:12px;background:#0b1220;">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.02em;color:#00ff88;margin-bottom:10px;">
+        📊 ${title}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px 12px;">
+        <div style="font-size:13px;color:#e5e7eb;"><strong>${entryLabel}:</strong> ${formatPrice(plan.entry)}</div>
+        <div style="font-size:13px;color:#e5e7eb;"><strong>${stopLabel}:</strong> ${formatPrice(plan.stop)}</div>
+        <div style="font-size:13px;color:#e5e7eb;"><strong>${targetLabel}:</strong> ${targetValue}</div>
+        <div style="font-size:13px;color:#e5e7eb;"><strong>${riskLabel}:</strong> -${plan.riskPercent.toFixed(1)}%</div>
+        <div style="font-size:13px;color:#e5e7eb;"><strong>${rewardLabel}:</strong> +${plan.rewardPercent.toFixed(1)}%</div>
+        <div style="font-size:13px;color:#e5e7eb;"><strong>${ratioLabel}:</strong> ${plan.riskReward}x</div>
+      </div>
+      <div style="font-size:12px;line-height:1.5;color:#ffaa00;margin-top:10px;">
+        ⚠️ ${footline}
+      </div>
+    </div>
+  `;
+}
+
+function renderHardPaywallBlock(snapshot = latestAnalysisSnapshot) {
+  const plan = getTradePlanFromSnapshot(snapshot);
+  return `
+    <div style="margin-top:16px;border:2px solid #ff4d4d;padding:18px;border-radius:14px;background:#111827;">
+      <div style="font-size:18px;font-weight:800;color:#ff4d4d;margin-bottom:8px;">
+        🔒 ${currentLang === "en" ? "Almost there" : "Falta pouco"}
+      </div>
+      <div style="font-size:13px;line-height:1.55;color:#e5e7eb;margin-bottom:8px;">
+        ${currentLang === "en"
+          ? "You already saw the structure, trend and plan. The exact trigger and full exit are locked on Pro."
+          : "Você já viu a estrutura, a tendência e o plano. O gatilho exato e a saída completa estão travados no Pro."}
+      </div>
+      <div style="font-size:13px;line-height:1.55;color:#00ff88;margin-bottom:12px;">
+        ✔ ${currentLang === "en"
+          ? `Estimated plan: entry ${formatPrice(plan.entry)} • stop ${formatPrice(plan.stop)} • target unlocked on Pro`
+          : `Plano estimado: entrada ${formatPrice(plan.entry)} • stop ${formatPrice(plan.stop)} • alvo liberado no Pro`}
+      </div>
+      <button type="button" class="cta-primary" data-upgrade-plan="pro" style="min-width:fit-content;">
+        ${currentLang === "en" ? "See exact entry now" : "Ver entrada exata agora"}
+      </button>
+    </div>
+  `;
+}
+
+
 function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
   const panel = document.querySelector(".analysis-hero-right");
   if (!panel) return;
@@ -2470,12 +2616,18 @@ function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
     return;
   }
 
+  const phase = getConversionPhase();
+  const hideTarget = !isUnlimitedAccessUser() && (phase === "almost" || phase === "locked");
+
   panel.innerHTML = `
     <span class="analysis-hero-caption">${currentLang === "en" ? "Intelligent reading" : "Leitura inteligente"}</span>
     <span class="analysis-hero-subcaption">${snapshot.readingLine}</span>
     <span class="analysis-hero-subcaption">${snapshot.trendLabel} • ${snapshot.strength} • ${snapshot.newsTone}</span>
     <span class="analysis-hero-subcaption">${currentLang === "en" ? "Score" : "Score"}: ${snapshot.score}/100 • ${snapshot.decision}</span>
     <span class="analysis-hero-subcaption">${currentLang === "en" ? "Support" : "Suporte"}: ${formatPrice(snapshot.support)} • ${currentLang === "en" ? "Resistance" : "Resistência"}: ${formatPrice(snapshot.resistance)}</span>
+    ${renderConfidenceBlock(snapshot)}
+    ${renderTradePlanBlock(snapshot, { phase, hideTarget, compact: true })}
+    ${!isUnlimitedAccessUser() && (phase === "almost" || phase === "locked") ? renderHardPaywallBlock(snapshot) : ""}
   `;
 }
 

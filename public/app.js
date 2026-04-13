@@ -41,6 +41,47 @@ let lastRenderedTimeframe = "";
 let lastChartInteractionAt = 0;
 const CHART_INTERACTION_GUARD_MS = 12000;
 const AUTH_SYNC_EVENT_KEY = "bolsa-auth-sync-event";
+const APP_STORAGE_VERSION = "2026-04-13-v2";
+
+function runClientStorageMigration() {
+  try {
+    const savedVersion = localStorage.getItem("app_storage_version");
+
+    if (savedVersion === APP_STORAGE_VERSION) return;
+
+    const keysToClear = [
+      "currentTimeframe",
+      "sb-access-token",
+      "app:latest-analysis",
+      "app:analysis-cache",
+      "app:quote-cache",
+      "app:chart-cache",
+      "app:watchlist-cache",
+      AUTH_SYNC_EVENT_KEY
+    ];
+
+    keysToClear.forEach((key) => {
+      try {
+        localStorage.removeItem(key);
+      } catch {}
+    });
+
+    try {
+      sessionStorage.removeItem("sb-access-token");
+    } catch {}
+
+    try {
+      localStorage.setItem("app_storage_version", APP_STORAGE_VERSION);
+    } catch {}
+
+    console.log("✅ Storage migration aplicada:", APP_STORAGE_VERSION);
+  } catch (error) {
+    console.error("Storage migration falhou:", error?.message || error);
+  }
+}
+
+runClientStorageMigration();
+
 
 const translations = {
   en: {

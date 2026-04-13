@@ -33,6 +33,7 @@ let networkBannerEl = null;
 let latestAnalysisSnapshot = null;
 let latestRenderedQuote = null;
 let latestRenderedProfile = null;
+let isAutoDemoPreview = false;
 let isAnalysisPaused = false;
 let tradingViewState = { symbol: "", interval: "", theme: "", locale: "", mode: "" };
 let lastRenderedCompareSymbol = "";
@@ -858,7 +859,7 @@ function setSearchLoadingState(loading) {
   if (loading) {
     searchBtn.disabled = true;
     searchBtn.style.opacity = "0.7";
-    searchBtn.textContent = currentLang === "en" ? "Analyzing real market data..." : "Analisando dados reais do mercado...";
+    searchBtn.textContent = currentLang === "en" ? "Starting your real analysis..." : "Iniciando sua análise real...";
     return;
   }
 
@@ -1005,6 +1006,7 @@ function getStaticDemoPayload(symbol = "AAPL") {
 }
 
 function renderFreeDemoPayload(normalized, quote, profile, candles, news, sourceLabel = "demo") {
+  isAutoDemoPreview = true;
   currentSymbol = normalized;
   latestRenderedQuote = { ...quote };
   latestRenderedProfile = { ...profile };
@@ -1726,6 +1728,33 @@ function refreshSignalUpgradeButton(btnEl) {
 }
 
 function buildPremiumTeaserBlocks(snapshot) {
+  if (isAutoDemoPreview) {
+    return `
+      <div class="premium-teaser-stack" style="display:grid;gap:14px;margin-top:16px;">
+        <div class="premium-teaser-card" style="border:1px solid rgba(49,212,113,.25);border-radius:14px;padding:18px;background:rgba(8,15,35,.55);box-shadow:inset 0 0 0 1px rgba(49,212,113,.04);">
+          <div style="font-weight:800;color:#31d471;margin-bottom:8px;">
+            🆓 ${currentLang === "en" ? "Free automatic example" : "Exemplo grátis automático"}
+          </div>
+          <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:8px;">
+            ${currentLang === "en"
+              ? "You are seeing a ready example so the site never looks empty."
+              : "Você está vendo um exemplo pronto para o site nunca parecer vazio."}
+          </div>
+          <div style="font-size:12px;line-height:1.55;color:#00ff88;margin-bottom:8px;">
+            ✔ ${currentLang === "en"
+              ? "This preview does not consume your free analyses."
+              : "Esta prévia não consome suas análises grátis."}
+          </div>
+          <div style="font-size:12px;line-height:1.55;color:#ffaa00;">
+            ${currentLang === "en"
+              ? "Click Analyze to start your real 3-step funnel."
+              : "Clique em Analisar para começar seu funil real de 3 etapas."}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   const phase = getConversionPhase();
   const decision = snapshot?.decision || (currentLang === "en" ? "Strong move detected" : "Movimento forte detectado");
   const symbol = snapshot?.symbol || displaySymbol(currentSymbol) || "Ativo";
@@ -1739,8 +1768,8 @@ function buildPremiumTeaserBlocks(snapshot) {
           </div>
           <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:10px;">
             ${currentLang === "en"
-              ? `Real market data loaded for ${symbol}. Trend detected automatically and the move already has a readable structure.`
-              : `Dados reais de mercado carregados para ${symbol}. A tendência foi detectada automaticamente e o movimento já tem uma estrutura legível.`}
+              ? `Real market data loaded for ${symbol}. The system already detected structure and direction.`
+              : `Dados reais de mercado carregados para ${symbol}. O sistema já detectou estrutura e direção.`}
           </div>
           <div style="font-size:12px;line-height:1.5;color:#00ff88;margin-bottom:8px;">
             ✔ ${currentLang === "en"
@@ -1749,8 +1778,8 @@ function buildPremiumTeaserBlocks(snapshot) {
           </div>
           <div style="font-size:12px;line-height:1.5;color:#ffaa00;">
             ${currentLang === "en"
-              ? "Use the next analysis to validate if this deserves real attention."
-              : "Use a próxima análise para validar se isso realmente merece atenção."}
+              ? "The exact trade map is still hidden. Use the next analysis to validate if this deserves real attention."
+              : "O mapa exato da operação ainda está oculto. Use a próxima análise para validar se isso realmente merece atenção."}
           </div>
           ${renderConfidenceBlock(snapshot)}
         </div>
@@ -1767,8 +1796,8 @@ function buildPremiumTeaserBlocks(snapshot) {
           </div>
           <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:8px;">
             ${currentLang === "en"
-              ? `Entry structure is clearer now. Trend, movement and pressure remain consistent for ${symbol}.`
-              : `A estrutura de entrada está mais clara agora. Tendência, movimento e pressão seguem consistentes para ${symbol}.`}
+              ? `The setup looks stronger now. Trend, movement and pressure remain consistent for ${symbol}.`
+              : `O setup está mais forte agora. Tendência, movimento e pressão seguem consistentes para ${symbol}.`}
           </div>
           <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:10px;">
             ⚠️ ${currentLang === "en"
@@ -1780,7 +1809,11 @@ function buildPremiumTeaserBlocks(snapshot) {
               ? "This kind of opportunity can move quickly."
               : "Esse tipo de oportunidade costuma acontecer rápido."}
           </div>
-          ${renderTradePlanBlock(snapshot, { phase: "validation" })}
+          <div style="font-size:12px;line-height:1.55;color:#dbeafe;">
+            ${currentLang === "en"
+              ? "You already know this is worth watching. The exact entry, timing and strategic exit stay locked until the next step."
+              : "Você já sabe que vale acompanhar. A entrada exata, o timing e a saída estratégica ficam travados até a próxima etapa."}
+          </div>
         </div>
       </div>
     `;
@@ -2934,7 +2967,42 @@ function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
   }
 
   const phase = getConversionPhase();
-  const hideTarget = !isUnlimitedAccessUser() && (phase === "almost" || phase === "locked");
+  const freeUser = !isUnlimitedAccessUser();
+  const isDemo = !!isAutoDemoPreview;
+
+  if (isDemo) {
+    panel.innerHTML = `
+      <span class="analysis-hero-caption">${currentLang === "en" ? "Automatic free example" : "Exemplo grátis automático"}</span>
+      <span class="analysis-hero-subcaption">${currentLang === "en" ? "This preview shows how the product works and does not consume your free analyses." : "Esta prévia mostra como o produto funciona e não consome suas análises grátis."}</span>
+      <span class="analysis-hero-subcaption">${snapshot.trendLabel} • ${snapshot.strength} • ${snapshot.newsTone}</span>
+      <span class="analysis-hero-subcaption">${currentLang === "en" ? "Confidence" : "Confiança"}: ${Math.max(52, Math.min(89, Math.round((Number(snapshot.score || 0) * 0.62) + 20)))}%</span>
+      <span class="analysis-hero-subcaption">${currentLang === "en" ? "Context" : "Contexto"}: ${snapshot.readingLine}</span>
+      <div style="margin-top:12px;border:1px solid #1f2a44;padding:14px;border-radius:12px;background:#0b1220;">
+        <div style="font-size:12px;font-weight:800;letter-spacing:.02em;color:#00ff88;margin-bottom:8px;">
+          📌 ${currentLang === "en" ? "What you are seeing now" : "O que você está vendo agora"}
+        </div>
+        <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:8px;">
+          ${currentLang === "en"
+            ? "A real visual example with price, context and chart already loaded."
+            : "Um exemplo visual real com preço, contexto e gráfico já carregados."}
+        </div>
+        <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:10px;">
+          ${currentLang === "en"
+            ? "Your free analyses begin only when you click Analyze on this asset again or on another asset."
+            : "Suas análises grátis só começam quando você clicar em Analisar neste ativo novamente ou em outro ativo."}
+        </div>
+        <div style="font-size:12px;line-height:1.55;color:#ff8a65;">
+          ${currentLang === "en"
+            ? "The exact strategic plan stays for the real funnel."
+            : "O plano estratégico exato fica reservado para o funil real."}
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const shouldShowPlan = !freeUser || phase === "almost" || phase === "locked";
+  const hideTarget = freeUser && (phase === "almost" || phase === "locked");
 
   panel.innerHTML = `
     <span class="analysis-hero-caption">${currentLang === "en" ? "Intelligent reading" : "Leitura inteligente"}</span>
@@ -2943,8 +3011,23 @@ function renderSmartPremiumPanel(snapshot = latestAnalysisSnapshot) {
     <span class="analysis-hero-subcaption">${currentLang === "en" ? "Score" : "Score"}: ${snapshot.score}/100 • ${snapshot.decision}</span>
     <span class="analysis-hero-subcaption">${currentLang === "en" ? "Support" : "Suporte"}: ${formatPrice(snapshot.support)} • ${currentLang === "en" ? "Resistance" : "Resistência"}: ${formatPrice(snapshot.resistance)}</span>
     ${renderConfidenceBlock(snapshot)}
-    ${renderTradePlanBlock(snapshot, { phase, hideTarget, compact: true })}
-    ${!isUnlimitedAccessUser() && (phase === "almost" || phase === "locked") ? renderHardPaywallBlock(snapshot) : ""}
+    ${shouldShowPlan ? renderTradePlanBlock(snapshot, { phase, hideTarget, compact: true }) : `
+      <div style="margin-top:12px;border:1px solid #1f2a44;padding:14px;border-radius:12px;background:#0b1220;">
+        <div style="font-size:12px;font-weight:800;letter-spacing:.02em;color:#00ff88;margin-bottom:8px;">
+          🔒 ${currentLang === "en" ? "Strategic plan still hidden" : "Plano estratégico ainda oculto"}
+        </div>
+        <div style="font-size:13px;line-height:1.55;color:#dbeafe;">
+          ${phase === "discovery"
+            ? (currentLang === "en"
+                ? "The system already found direction and quality. The exact entry map appears only when the setup gets stronger."
+                : "O sistema já encontrou direção e qualidade. O mapa exato de entrada aparece apenas quando o setup fica mais forte.")
+            : (currentLang === "en"
+                ? "Validation is stronger now, but the exact entry, timing and strategic exit stay locked until the next step."
+                : "A validação está mais forte agora, mas a entrada exata, o timing e a saída estratégica seguem travados até a próxima etapa.")}
+        </div>
+      </div>
+    `}
+    ${freeUser && (phase === "almost" || phase === "locked") ? renderHardPaywallBlock(snapshot) : ""}
   `;
 }
 
@@ -3448,6 +3531,7 @@ function buildPreviewQuoteFromCandles(candles = {}, existingQuote = {}) {
 }
 
 async function handleSearch(silentRefresh = false) {
+  isAutoDemoPreview = false;
   if (isSearchingNow) return;
   const symbol = normalizeSymbol(symbolInput?.value);
   const compareSymbol = normalizeSymbol(compareInput?.value);

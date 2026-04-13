@@ -36,6 +36,7 @@ let latestRenderedProfile = null;
 let isAutoDemoPreview = false;
 let analysisRenderPhase = "idle";
 let pendingRenderToken = 0;
+let stagedAnalysisPayload = null;
 let isAnalysisPaused = false;
 let tradingViewState = { symbol: "", interval: "", theme: "", locale: "", mode: "" };
 let lastRenderedCompareSymbol = "";
@@ -790,8 +791,12 @@ function renderAnalysisTransitionShell(mode = "live", symbol = "") {
   }
 }
 
+
 function commitSynchronizedAnalysisRender(token, payload) {
   if (!isActiveRenderToken(token)) return false;
+
+  // STAGE DATA (no UI mutation yet)
+  stagedAnalysisPayload = payload;
 
   const {
     symbol,
@@ -802,13 +807,21 @@ function commitSynchronizedAnalysisRender(token, payload) {
     analysisSnapshot,
     sourceLabel = "",
     isDemo = false
-  } = payload;
+  } = stagedAnalysisPayload;
 
+  // NOW APPLY EVERYTHING AT ONCE (atomic)
   currentSymbol = symbol;
   latestRenderedQuote = { ...quote };
   latestRenderedProfile = { ...profile };
   latestAnalysisSnapshot = analysisSnapshot;
 
+  // BLOCK REVEAL UNTIL EVERYTHING READY
+  [companyCard, quoteGrid, chartCard, newsSection].forEach((el) => {
+    if (!el) return;
+    el.style.opacity = "0";
+  });
+
+  // APPLY ALL VISUAL DATA TOGETHER
   if (companyName) companyName.textContent = profile.name || displaySymbol(symbol);
   if (companyTicker) companyTicker.textContent = displaySymbol(symbol);
   if (companyExchange) companyExchange.textContent = `${profile.exchange || t("exchange")}${sourceLabel ? ` • ${sourceLabel}` : ""}`;
@@ -820,23 +833,23 @@ function commitSynchronizedAnalysisRender(token, payload) {
   updateAnalysisHero(quote, symbol);
   updateMarketSignalCard(analysisSnapshot);
 
-  if (companyCard) companyCard.classList.remove("hidden");
-  if (quoteGrid) quoteGrid.classList.remove("hidden");
-  if (chartCard) chartCard.classList.remove("hidden");
-  if (newsSection) newsSection.classList.remove("hidden");
   if (newsSymbol) newsSymbol.textContent = displaySymbol(symbol);
 
-  [companyCard, quoteGrid, chartCard, newsSection].forEach((el) => {
-    if (!el) return;
-    el.style.opacity = "0";
-    el.style.pointerEvents = "none";
-    el.style.filter = "blur(2px)";
-    el.style.transform = "translateY(4px)";
+  // FINAL REVEAL (single frame)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      [companyCard, quoteGrid, chartCard, newsSection].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = "1";
+        el.style.transition = "opacity 120ms ease-out";
+      });
+    });
   });
 
   analysisRenderPhase = isDemo ? "demo_ready" : "live_ready";
   return true;
 }
+
 
 
 function finalizeCommittedRender(token) {

@@ -858,7 +858,7 @@ function setSearchLoadingState(loading) {
   if (loading) {
     searchBtn.disabled = true;
     searchBtn.style.opacity = "0.7";
-    searchBtn.textContent = currentLang === "en" ? "Analyzing..." : "Analisando...";
+    searchBtn.textContent = currentLang === "en" ? "Analyzing real market data..." : "Analisando dados reais do mercado...";
     return;
   }
 
@@ -1737,15 +1737,20 @@ function buildPremiumTeaserBlocks(snapshot) {
           <div style="font-weight:800;color:#31d471;margin-bottom:8px;">
             🟢 ${currentLang === "en" ? "Analysis 1 — Discovery" : "Análise 1 — Descoberta"}
           </div>
-          <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:10px;">
+          <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:10px;">
             ${currentLang === "en"
-              ? `Real market data loaded for ${symbol}. Trend detected automatically, but the exact trigger is still hidden.`
-              : `Dados reais de mercado carregados para ${symbol}. Tendência detectada automaticamente, mas o gatilho exato ainda fica oculto.`}
+              ? `Real market data loaded for ${symbol}. Trend detected automatically and the move already has a readable structure.`
+              : `Dados reais de mercado carregados para ${symbol}. A tendência foi detectada automaticamente e o movimento já tem uma estrutura legível.`}
           </div>
-          <div style="font-size:12px;line-height:1.45;color:#93c5fd;">
+          <div style="font-size:12px;line-height:1.5;color:#00ff88;margin-bottom:8px;">
+            ✔ ${currentLang === "en"
+              ? "Trend identified based on recent movement and pressure."
+              : "Tendência identificada com base no movimento recente e na pressão do ativo."}
+          </div>
+          <div style="font-size:12px;line-height:1.5;color:#ffaa00;">
             ${currentLang === "en"
-              ? "Use the next analysis to validate whether this setup deserves attention."
-              : "Use a próxima análise para validar se esse setup realmente merece atenção."}
+              ? "Use the next analysis to validate if this deserves real attention."
+              : "Use a próxima análise para validar se isso realmente merece atenção."}
           </div>
           ${renderConfidenceBlock(snapshot)}
         </div>
@@ -1760,15 +1765,20 @@ function buildPremiumTeaserBlocks(snapshot) {
           <div style="font-weight:800;color:#ffd166;margin-bottom:8px;">
             🟡 ${currentLang === "en" ? "Analysis 2 — Validation" : "Análise 2 — Validação"}
           </div>
-          <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:8px;">
+          <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:8px;">
             ${currentLang === "en"
-              ? `Suggested entry based on trend + volume. Confidence: 67%. Recent movement remains consistent for ${symbol}.`
-              : `Entrada sugerida com base em tendência + volume. Confiança: 67%. O movimento recente segue consistente para ${symbol}.`}
+              ? `Entry structure is clearer now. Trend, movement and pressure remain consistent for ${symbol}.`
+              : `A estrutura de entrada está mais clara agora. Tendência, movimento e pressão seguem consistentes para ${symbol}.`}
           </div>
-          <div style="font-size:12px;line-height:1.55;color:#ffaa00;">
+          <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:10px;">
             ⚠️ ${currentLang === "en"
               ? "Setups like this have shown good recent performance."
               : "Setups como este tiveram boa performance recente."}
+          </div>
+          <div style="font-size:12px;line-height:1.55;color:#ff8a65;margin-bottom:10px;">
+            ⏱️ ${currentLang === "en"
+              ? "This kind of opportunity can move quickly."
+              : "Esse tipo de oportunidade costuma acontecer rápido."}
           </div>
           ${renderTradePlanBlock(snapshot, { phase: "validation" })}
         </div>
@@ -1783,20 +1793,25 @@ function buildPremiumTeaserBlocks(snapshot) {
           <div style="font-weight:900;color:#ff4d4d;margin-bottom:8px;font-size:18px;">
             🔴 ${currentLang === "en" ? "Analysis 3 — Almost there" : "Análise 3 — Quase lá"}
           </div>
-          <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:8px;">
+          <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:10px;">
             ${currentLang === "en"
-              ? `Signal identified. Trend confirmed. Entry structure detected for ${symbol}.`
-              : `Sinal identificado. Tendência confirmada. Estrutura de entrada detectada para ${symbol}.`}
+              ? `The market already gave structure, context and direction for ${symbol}.`
+              : `O mercado já entregou estrutura, contexto e direção para ${symbol}.`}
           </div>
           <div style="font-size:13px;line-height:1.55;color:#00ff88;margin-bottom:8px;">
             ✔ ${currentLang === "en"
-              ? "Entry, stop and timing are almost ready."
-              : "Entrada, stop e timing estão quase prontos."}
+              ? "Exact entry + timing + strategic exit are almost ready."
+              : "Entrada exata + timing + saída estratégica estão quase prontos."}
           </div>
-          <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:12px;">
+          <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:8px;">
             ⚠️ ${currentLang === "en"
               ? "Pro users see this before the move becomes obvious."
               : "Usuários PRO veem isso antes do movimento começar."}
+          </div>
+          <div style="font-size:12px;line-height:1.55;color:#ff8a65;margin-bottom:12px;">
+            ${currentLang === "en"
+              ? "The market does not wait for perfect confirmation."
+              : "O mercado não espera confirmação perfeita."}
           </div>
           ${renderTradePlanBlock(snapshot, { phase: "almost", hideTarget: true })}
           ${renderHardPaywallBlock(snapshot)}
@@ -1811,7 +1826,7 @@ function buildPremiumTeaserBlocks(snapshot) {
         <div style="font-weight:900;color:#ff6b6b;margin-bottom:8px;font-size:18px;">
           🔒 ${currentLang === "en" ? "Free limit reached" : "Limite gratuito atingido"}
         </div>
-        <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:8px;">
+        <div style="font-size:13px;line-height:1.55;color:#dbeafe;margin-bottom:8px;">
           ${currentLang === "en"
             ? "You already saw how the product works."
             : "Você já viu como funciona."}
@@ -1821,10 +1836,15 @@ function buildPremiumTeaserBlocks(snapshot) {
             ? `Now only the complete analysis is missing to decide with confidence on ${decision}.`
             : `Agora falta apenas a análise completa para tomar decisão com segurança em ${decision}.`}
         </div>
-        <div style="font-size:12px;line-height:1.45;color:#ffaa00;margin-bottom:12px;">
+        <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:8px;">
           ${currentLang === "en"
-            ? "Keep the live chart visible, but unlock new full reads with Pro."
-            : "Mantenha o gráfico ao vivo visível, mas libere novas leituras completas com o Pro."}
+            ? "Unlock the complete reading to see the exact trigger and strategic exit."
+            : "Desbloqueie a leitura completa para ver o gatilho exato e a saída estratégica."}
+        </div>
+        <div style="font-size:12px;line-height:1.55;color:#ff8a65;margin-bottom:12px;">
+          ${currentLang === "en"
+            ? "The market can move before you come back."
+            : "O mercado pode andar antes de você voltar."}
         </div>
         ${renderTradePlanBlock(snapshot, { phase: "locked", hideTarget: true })}
         ${renderHardPaywallBlock(snapshot)}
@@ -2886,13 +2906,18 @@ function renderHardPaywallBlock(snapshot = latestAnalysisSnapshot) {
           ? `Estimated plan already visible: entry ${formatPrice(plan.entry)} • stop ${formatPrice(plan.stop)} • target 1 ${formatPrice(plan.target1)}`
           : `Plano estimado já visível: entrada ${formatPrice(plan.entry)} • stop ${formatPrice(plan.stop)} • alvo 1 ${formatPrice(plan.target1)}`}
       </div>
-      <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:14px;">
+      <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:8px;">
         ⚠️ ${currentLang === "en"
           ? "Pro users see the exact entry before the movement becomes obvious."
           : "Usuários PRO veem a entrada exata antes do movimento ficar óbvio."}
       </div>
+      <div style="font-size:12px;line-height:1.55;color:#ff8a65;margin-bottom:14px;">
+        ${currentLang === "en"
+          ? "The complete analysis is what turns interest into decision."
+          : "A análise completa é o que transforma interesse em decisão."}
+      </div>
       <button type="button" class="cta-primary" data-upgrade-plan="pro" style="min-width:fit-content;font-weight:900;box-shadow:0 10px 24px rgba(34,197,94,.18);">
-        ${currentLang === "en" ? "See exact entry now" : "Ver entrada exata agora"}
+        ${currentLang === "en" ? "Unlock complete analysis now" : "Desbloquear análise completa agora"}
       </button>
     </div>
   `;
@@ -5557,6 +5582,29 @@ function bindDiagnosticsEvents() {
 
 
 init();
+
+
+function ensureDataSourceFooter() {
+  let footer = document.getElementById("marketDataFooterProof");
+  if (!footer) {
+    footer = document.createElement("div");
+    footer.id = "marketDataFooterProof";
+    footer.style.marginTop = "14px";
+    footer.style.fontSize = "11px";
+    footer.style.lineHeight = "1.5";
+    footer.style.color = "#93a4c3";
+    footer.style.textAlign = "center";
+    footer.textContent = currentLang === "en"
+      ? "Market data provided by Finnhub and Yahoo Finance (free plan may have delay)."
+      : "Dados de mercado fornecidos por Finnhub e Yahoo Finance (o plano gratuito pode ter atraso).";
+    const target = document.querySelector(".container") || document.body;
+    target.appendChild(footer);
+  } else {
+    footer.textContent = currentLang === "en"
+      ? "Market data provided by Finnhub and Yahoo Finance (free plan may have delay)."
+      : "Dados de mercado fornecidos por Finnhub e Yahoo Finance (o plano gratuito pode ter atraso).";
+  }
+}
 
 window.addEventListener("load", () => {
   setTimeout(() => {

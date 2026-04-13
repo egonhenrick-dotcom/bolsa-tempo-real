@@ -1048,43 +1048,32 @@ async function openFreeDemo(symbol = "AAPL") {
       ? `${displaySymbol(normalized)} demo opened without consuming a free analysis.`
       : `Demo ${displaySymbol(normalized)} aberta sem consumir análise grátis.`);
 
-    const results = await Promise.allSettled([
-      fetchJSON(`/api/quote/${normalized}`),
-      fetchJSON(`/api/profile/${normalized}`),
-      fetchJSON(`/api/candles/${encodeURIComponent(normalized)}?${getTimeframeQuery(currentTimeframe)}`),
-      fetchJSON(`/api/news/${normalized}`)
-    ]);
+    const profile = await fetchMarketJSON(`/api/profile/${normalized}`, {
+      fallbackValue: staticPayload.profile,
+      retries: 1
+    });
 
-    let quote = results[0].status === "fulfilled"
-      ? results[0].value
-      : staticPayload.quote;
+    const candles = await fetchMarketJSON(`/api/candles/${encodeURIComponent(normalized)}?${getTimeframeQuery(currentTimeframe)}`, {
+      fallbackValue: staticPayload.candles,
+      retries: 1
+    });
 
-    const profile = results[1].status === "fulfilled"
-      ? results[1].value
-      : staticPayload.profile;
+    const news = await fetchMarketJSON(`/api/news/${normalized}`, {
+      fallbackValue: staticPayload.news,
+      retries: 1
+    });
 
-    const candles = results[2].status === "fulfilled" && Array.isArray(results[2].value?.c) && results[2].value.c.length
-      ? results[2].value
-      : staticPayload.candles;
-
-    const news = results[3].status === "fulfilled" && Array.isArray(results[3].value) && results[3].value.length
-      ? results[3].value
-      : staticPayload.news;
-
-    if (!hasValidQuoteData(quote)) {
-      quote = buildPreviewQuoteFromCandles(candles, quote);
-    }
-
-    if (!hasValidQuoteData(quote)) {
-      quote = staticPayload.quote;
-    }
+    const quote = await fetchMarketQuoteWithFallback(normalized, {
+      authenticated: false,
+      candles
+    });
 
     renderFreeDemoPayload(
       normalized,
-      quote,
-      profile,
-      candles,
-      news,
+      hasValidQuoteData(quote) ? quote : staticPayload.quote,
+      profile || staticPayload.profile,
+      candles?.c?.length ? candles : staticPayload.candles,
+      Array.isArray(news) && news.length ? news : staticPayload.news,
       currentLang === "en" ? "Live/demo fallback" : "Fallback live/demo"
     );
   } catch (error) {
@@ -1550,6 +1539,74 @@ async function fetchAuthJSON(url, options = {}) {
     }
     throw error;
   }
+}
+
+function isRecoverableMarketStatus(status) {
+  return status === 403 || status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+}
+
+async function fetchMarketJSON(url, options = {}) {
+  const {
+    fallbackValue = null,
+    retries = 1,
+    retryDelayMs = 450,
+    authenticated = false
+  } = options;
+
+  let attempt = 0;
+  let lastError = null;
+
+  while (attempt <= retries) {
+    try {
+      const requestOptions = {
+        ...options,
+        silentNetworkBanner: attempt < retries || options.silentNetworkBanner === true
+      };
+
+      const data = authenticated
+        ? await fetchAuthJSON(url, requestOptions)
+        : await fetchJSON(url, requestOptions);
+
+      return data;
+    } catch (error) {
+      lastError = error;
+
+      if (!isRecoverableMarketStatus(error?.status) || attempt >= retries) {
+        break;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+      attempt += 1;
+    }
+  }
+
+  console.warn("Market fallback used:", url, lastError?.status || lastError?.message || "unknown");
+  return fallbackValue;
+}
+
+async function fetchMarketQuoteWithFallback(symbol, { authenticated = false, candles = null } = {}) {
+  const normalized = normalizeSymbol(symbol || "");
+  const emptyQuote = { c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, error: "QUOTE_UNAVAILABLE", source: "fallback" };
+
+  const liveQuote = await fetchMarketJSON(`/api/quote/${normalized}`, {
+    fallbackValue: null,
+    retries: 1,
+    authenticated
+  });
+
+  if (hasValidQuoteData(liveQuote)) {
+    return liveQuote;
+  }
+
+  const derivedQuote = buildPreviewQuoteFromCandles(candles || {}, emptyQuote);
+  if (hasValidQuoteData(derivedQuote)) {
+    return {
+      ...derivedQuote,
+      source: "chart_fallback"
+    };
+  }
+
+  return emptyQuote;
 }
 
 let isFetchingUsage = false;
@@ -3424,35 +3481,30 @@ async function handleSearch(silentRefresh = false) {
   }
 
   try {
-    const apiGet = currentUser ? fetchAuthJSON : fetchJSON;
-    const quotePromise = allowPreviewMode
-      ? Promise.resolve({ c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, source: "preview", error: "PREVIEW_ONLY" })
-      : apiGet(`/api/quote/${symbol}`);
+    const authenticatedQuote = !!currentUser;
+    const profile = await fetchMarketJSON(`/api/profile/${symbol}`, {
+      fallbackValue: { name: displaySymbol(symbol), exchange: t("exchange"), error: "PROFILE_UNAVAILABLE" },
+      retries: 1
+    });
 
-    const results = await Promise.allSettled([
-      quotePromise,
-      fetchJSON(`/api/profile/${symbol}`),
-      fetchJSON(`/api/candles/${encodeURIComponent(symbol)}?${getTimeframeQuery(currentTimeframe)}`),
-      fetchJSON(`/api/news/${symbol}`)
-    ]);
+    const candles = await fetchMarketJSON(`/api/candles/${encodeURIComponent(symbol)}?${getTimeframeQuery(currentTimeframe)}`, {
+      fallbackValue: { s: "no_data", c: [] },
+      retries: 1
+    });
 
-    let quote = results[0].status === "fulfilled"
-      ? results[0].value
-      : { c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, error: "QUOTE_UNAVAILABLE" };
+    const news = await fetchMarketJSON(`/api/news/${symbol}`, {
+      fallbackValue: [],
+      retries: 1
+    });
 
-    const profile = results[1].status === "fulfilled"
-      ? results[1].value
-      : { name: displaySymbol(symbol), exchange: t("exchange"), error: "PROFILE_UNAVAILABLE" };
+    let quote = allowPreviewMode
+      ? buildPreviewQuoteFromCandles(candles, { c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, source: "preview", error: "PREVIEW_ONLY" })
+      : await fetchMarketQuoteWithFallback(symbol, {
+          authenticated: authenticatedQuote,
+          candles
+        });
 
-    const candles = results[2].status === "fulfilled"
-      ? results[2].value
-      : { s: "no_data", c: [] };
-
-    const news = results[3].status === "fulfilled"
-      ? results[3].value
-      : [];
-
-    if (allowPreviewMode) {
+    if (!hasValidQuoteData(quote)) {
       quote = buildPreviewQuoteFromCandles(candles, quote);
     }
 
@@ -3472,7 +3524,11 @@ async function handleSearch(silentRefresh = false) {
         setStatus(t("compareOnlyPro"));
         if (chartLabel) chartLabel.textContent = getTimeframeLabel(currentTimeframe);
       } else {
-        const compareData = await fetchCandlesByTimeframe(compareSymbol, true, currentTimeframe);
+        const compareData = await fetchMarketJSON(`/api/candles/${encodeURIComponent(compareSymbol)}?${getTimeframeQuery(currentTimeframe)}`, {
+          fallbackValue: null,
+          retries: 1,
+          authenticated: true
+        });
         compareCandles = compareData?.s === "ok" ? compareData : null;
       }
     }

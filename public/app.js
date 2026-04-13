@@ -708,8 +708,8 @@ function renderAnalysisTransitionShell(mode = "live", symbol = "") {
 
   const subtitle = liveMode
     ? (currentLang === "en"
-        ? "Collecting market data and synchronizing the visual blocks before showing the result."
-        : "Coletando dados do mercado e sincronizando os blocos visuais antes de mostrar o resultado.")
+        ? "Collecting market data and rebuilding all visual blocks before showing the result."
+        : "Coletando dados do mercado e reconstruindo todos os blocos visuais antes de mostrar o resultado.")
     : (currentLang === "en"
         ? "Preparing a visual example so the product never opens empty."
         : "Preparando um exemplo visual para o produto nunca abrir vazio.");
@@ -729,10 +729,13 @@ function renderAnalysisTransitionShell(mode = "live", symbol = "") {
   if (chartCard) chartCard.classList.remove("hidden");
   if (newsSection) newsSection.classList.remove("hidden");
 
-  if (companyCard) companyCard.style.opacity = "0.55";
-  if (quoteGrid) quoteGrid.style.opacity = "0.55";
-  if (chartCard) chartCard.style.opacity = "0.55";
-  if (newsSection) newsSection.style.opacity = "0.55";
+  [companyCard, quoteGrid, chartCard, newsSection].forEach((el) => {
+    if (!el) return;
+    el.style.opacity = "0";
+    el.style.pointerEvents = "none";
+    el.style.filter = "blur(2px)";
+    el.style.transform = "translateY(4px)";
+  });
 
   if (chart) {
     chart.innerHTML = `
@@ -823,13 +826,37 @@ function commitSynchronizedAnalysisRender(token, payload) {
   if (newsSection) newsSection.classList.remove("hidden");
   if (newsSymbol) newsSymbol.textContent = displaySymbol(symbol);
 
-  if (companyCard) companyCard.style.opacity = "1";
-  if (quoteGrid) quoteGrid.style.opacity = "1";
-  if (chartCard) chartCard.style.opacity = "1";
-  if (newsSection) newsSection.style.opacity = "1";
+  [companyCard, quoteGrid, chartCard, newsSection].forEach((el) => {
+    if (!el) return;
+    el.style.opacity = "0";
+    el.style.pointerEvents = "none";
+    el.style.filter = "blur(2px)";
+    el.style.transform = "translateY(4px)";
+  });
 
   analysisRenderPhase = isDemo ? "demo_ready" : "live_ready";
   return true;
+}
+
+
+function finalizeCommittedRender(token) {
+  if (!isActiveRenderToken(token)) return;
+
+  const reveal = () => {
+    if (!isActiveRenderToken(token)) return;
+    [companyCard, quoteGrid, chartCard, newsSection].forEach((el) => {
+      if (!el) return;
+      el.style.opacity = "1";
+      el.style.pointerEvents = "";
+      el.style.filter = "";
+      el.style.transform = "";
+      el.style.transition = "opacity 180ms ease, filter 180ms ease, transform 180ms ease";
+    });
+  };
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(reveal);
+  });
 }
 
 function setChartLoadingState(loading) {
@@ -1227,6 +1254,7 @@ function renderFreeDemoPayload(normalized, quote, profile, candles, news, source
   if (!committed) return;
 
   drawChart(candles, null, { forceReload: true });
+  finalizeCommittedRender(renderToken);
   updateAnalysisStageBadge(`${currentLang === "en" ? "Free automatic example" : "Exemplo grátis automático"} • ${displaySymbol(normalized)}`, "success");
   updateChartHeader("");
 }
@@ -3883,6 +3911,7 @@ async function handleSearch(silentRefresh = false) {
     if (chartRefreshPlan.reload) {
       drawChart(candles, compareCandles, { forceReload: chartRefreshPlan.forceReload === true });
     }
+    finalizeCommittedRender(renderToken);
 
     lastRenderedCompareSymbol = chartRefreshPlan.compareKey;
     lastRenderedBaseSymbol = chartRefreshPlan.baseKey || symbol;

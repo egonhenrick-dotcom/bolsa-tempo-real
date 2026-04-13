@@ -342,9 +342,51 @@ function canUsePreviewAfterLimit(requestedSymbol = "", { silentRefresh = false }
   return normalizedRequested === lockedSymbol;
 }
 
+function getFreeUsageStats(data = usageData) {
+  const used = Number(data?.used ?? 0);
+  const remaining = Number(data?.remaining ?? 0);
+  const limitRaw = data?.limit;
+  const limit = limitRaw === "∞" ? Infinity : Number(limitRaw ?? 3);
+
+  return {
+    used: Number.isFinite(used) ? used : 0,
+    remaining: Number.isFinite(remaining) ? remaining : 0,
+    limit: Number.isFinite(limit) ? limit : Infinity
+  };
+}
+
+function getConversionPhase(data = usageData) {
+  if (isUnlimitedAccessUser() || isStarterActivePlan()) return "paid";
+
+  const { used, remaining, limit } = getFreeUsageStats(data);
+  if (limit === Infinity) return "paid";
+  if (remaining <= 0 || used >= 3) return "locked";
+  if (used <= 1) return "discovery";
+  if (used === 2) return "validation";
+  if (used >= 3 || remaining === 1) return "almost";
+  return "discovery";
+}
+
+function getPhaseTitle(phase = getConversionPhase()) {
+  if (phase === "discovery") {
+    return currentLang === "en" ? "Discovery analysis" : "Análise de descoberta";
+  }
+  if (phase === "validation") {
+    return currentLang === "en" ? "Validation analysis" : "Análise de validação";
+  }
+  if (phase === "almost") {
+    return currentLang === "en" ? "Almost there" : "Quase lá";
+  }
+  if (phase === "locked") {
+    return currentLang === "en" ? "Free limit reached" : "Limite gratuito atingido";
+  }
+  return currentLang === "en" ? "Premium access" : "Acesso premium";
+}
+
 function getUsageBadgeMessage(data = usageData) {
   const limit = data?.limit;
   const remaining = Number(data?.remaining);
+  const phase = getConversionPhase(data);
 
   if (limit === "∞") {
     return currentLang === "en"
@@ -356,21 +398,27 @@ function getUsageBadgeMessage(data = usageData) {
     return `${t("remainingToday")}: ${data?.remaining ?? 0}`;
   }
 
-  if (remaining <= 0) {
+  if (phase === "locked") {
     return currentLang === "en"
       ? "🔒 Free limit reached today"
       : "🔒 Limite grátis atingido hoje";
   }
 
-  if (remaining === 1) {
+  if (phase === "almost") {
     return currentLang === "en"
-      ? "⚠️ Last free analysis today"
-      : "⚠️ Última análise grátis hoje";
+      ? "🚨 Final free analysis before unlock"
+      : "🚨 Última análise grátis antes do bloqueio";
+  }
+
+  if (phase === "validation") {
+    return currentLang === "en"
+      ? `🟡 Validation stage • ${remaining} left`
+      : `🟡 Fase de validação • ${remaining} restante(s)`;
   }
 
   return currentLang === "en"
-    ? `🎯 Free analyses today: ${remaining}`
-    : `🎯 Análises grátis hoje: ${remaining}`;
+    ? `🟢 Discovery stage • ${remaining} free analyses left`
+    : `🟢 Fase de descoberta • ${remaining} análises grátis restantes`;
 }
 
 const watchSymbols = ["AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "META", "PETR4", "VALE3"];
@@ -795,6 +843,125 @@ function resetSmartPremiumPanel() {
     <span class="analysis-hero-caption">${currentLang === "en" ? "Smart panel" : "Painel inteligente"}</span>
     <span class="analysis-hero-subcaption">${currentLang === "en" ? "Waiting for a live reading to unlock trend, zones and timing." : "Aguardando uma leitura ao vivo para liberar tendência, zonas e timing."}</span>
   `;
+}
+
+
+function ensureDataTrustFooter() {
+  let footer = document.getElementById("marketDataTrustFooter");
+  if (!footer) {
+    footer = document.createElement("footer");
+    footer.id = "marketDataTrustFooter";
+    footer.style.marginTop = "18px";
+    footer.style.padding = "12px 14px";
+    footer.style.border = "1px solid rgba(148,163,184,.18)";
+    footer.style.borderRadius = "12px";
+    footer.style.background = "rgba(15,23,42,.52)";
+    footer.style.fontSize = "12px";
+    footer.style.lineHeight = "1.55";
+    footer.style.color = "#94a3b8";
+
+    const target = newsSection || chartCard || document.body;
+    target?.parentNode?.insertBefore(footer, (target?.nextSibling || null));
+  }
+
+  footer.textContent = currentLang === "en"
+    ? "Market data provided by Yahoo Finance (free plan may have delay)."
+    : "Dados de mercado fornecidos por Yahoo Finance (o plano gratuito pode ter atraso).";
+}
+
+async function openFreeDemo(symbol = "PETR4") {
+  const normalized = normalizeSymbol(symbol || "PETR4");
+
+  try {
+    const results = await Promise.allSettled([
+      fetchJSON(`/api/quote/${normalized}`),
+      fetchJSON(`/api/profile/${normalized}`),
+      fetchJSON(`/api/candles/${encodeURIComponent(normalized)}?${getTimeframeQuery(currentTimeframe)}`),
+      fetchJSON(`/api/news/${normalized}`)
+    ]);
+
+    let quote = results[0].status === "fulfilled"
+      ? results[0].value
+      : { c: null, d: null, dp: null, h: null, l: null, o: null, pc: null, error: "QUOTE_UNAVAILABLE", source: "preview" };
+    const profile = results[1].status === "fulfilled"
+      ? results[1].value
+      : { name: displaySymbol(normalized), exchange: t("exchange") };
+    const candles = results[2].status === "fulfilled"
+      ? results[2].value
+      : { s: "no_data", c: [] };
+    const news = results[3].status === "fulfilled"
+      ? results[3].value
+      : [];
+
+    if (!hasValidQuoteData(quote)) {
+      quote = buildPreviewQuoteFromCandles(candles, quote);
+    }
+
+    currentSymbol = normalized;
+    latestRenderedQuote = { ...quote };
+    latestRenderedProfile = { ...profile };
+
+    if (companyName) companyName.textContent = profile.name || displaySymbol(normalized);
+    if (companyTicker) companyTicker.textContent = displaySymbol(normalized);
+    if (companyExchange) companyExchange.textContent = `${profile.exchange || t("exchange")} • ${currentLang === "en" ? "Demo preview" : "Demo visual"}`;
+
+    applyQuoteCardValues(quote);
+    drawChart(candles, null, { forceReload: true });
+    const analysisSnapshot = buildAnalysisSnapshot(normalized, quote, candles, news, profile);
+    latestAnalysisSnapshot = analysisSnapshot;
+    renderNews(news);
+    renderOverview(quote, analysisSnapshot);
+    renderSmartPremiumPanel(analysisSnapshot);
+    updateAnalysisStageBadge(`${currentLang === "en" ? "Demo without spend" : "Demo sem gasto"} • ${displaySymbol(normalized)}`, "success");
+    updateChartHeader("");
+
+    if (companyCard) companyCard.classList.remove("hidden");
+    if (quoteGrid) quoteGrid.classList.remove("hidden");
+    if (chartCard) chartCard.classList.remove("hidden");
+    if (newsSection) newsSection.classList.remove("hidden");
+    if (newsSymbol) newsSymbol.textContent = displaySymbol(normalized);
+
+    setStatus(currentLang === "en"
+      ? `PETR4 demo opened without consuming a free analysis.`
+      : `Demo PETR4 aberta sem consumir análise grátis.`);
+  } catch (error) {
+    setStatus(error?.message || (currentLang === "en" ? "Unable to open demo right now." : "Não foi possível abrir a demo agora."));
+  }
+}
+
+function ensureFreeDemoCard() {
+  const host = document.getElementById("watchlistSection") || document.querySelector(".watchlist-section") || marketOverview?.parentNode || chartCard?.parentNode;
+  if (!host) return;
+
+  let card = document.getElementById("freeDemoCard");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "freeDemoCard";
+    card.style.margin = "14px 0";
+    card.style.padding = "14px";
+    card.style.borderRadius = "14px";
+    card.style.border = "1px solid rgba(49,212,113,.18)";
+    card.style.background = "rgba(8,15,35,.55)";
+    host.insertBefore(card, host.firstChild);
+  }
+
+  card.innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:800;color:#31d471;margin-bottom:4px;">${currentLang === "en" ? "Demo without spending analysis" : "Demo sem gastar análise"}</div>
+        <div style="font-size:13px;line-height:1.5;color:#dbeafe;">${currentLang === "en" ? "Example always visible with PETR4. Demonstration only and does not consume your daily analyses." : "Exemplo sempre visível com PETR4. Demonstração apenas e não consome suas análises diárias."}</div>
+      </div>
+      <button type="button" class="neutral-btn" id="freeDemoBtn" style="min-width:fit-content;">${currentLang === "en" ? "Open PETR4 demo" : "Abrir demo PETR4"}</button>
+    </div>
+  `;
+
+  const btn = document.getElementById("freeDemoBtn");
+  if (btn) {
+    btn.onclick = async () => {
+      if (symbolInput) symbolInput.value = "PETR4";
+      await openFreeDemo("PETR4");
+    };
+  }
 }
 
 function clearAnalysisUI() {
@@ -1327,48 +1494,105 @@ function refreshSignalUpgradeButton(btnEl) {
 }
 
 function buildPremiumTeaserBlocks(snapshot) {
+  const phase = getConversionPhase();
   const decision = snapshot?.decision || (currentLang === "en" ? "Strong move detected" : "Movimento forte detectado");
-  const blocks = [
-    {
-      title: currentLang === "en" ? "Complete signal blocked" : "Sinal completo bloqueado",
-      text: currentLang === "en"
-        ? "Entry + exit + ideal timing are available on Pro."
-        : "Entrada + saída + timing ideal estão disponíveis no Pro."
-    },
-    {
-      title: currentLang === "en" ? "Strategic reading blocked" : "Leitura estratégica bloqueada",
-      text: currentLang === "en"
-        ? "See the full reading before the market confirms the move."
-        : "Veja a leitura completa antes do mercado confirmar o movimento."
-    },
-    {
-      title: currentLang === "en" ? "Final confirmation blocked" : "Confirmação final bloqueada",
-      text: currentLang === "en"
-        ? `Pro users see the full confirmation for: ${decision}.`
-        : `Usuários Pro veem a confirmação completa para: ${decision}.`
-    }
-  ];
+  const symbol = snapshot?.symbol || displaySymbol(currentSymbol) || "Ativo";
+
+  if (phase === "discovery") {
+    return `
+      <div class="premium-teaser-stack" style="display:grid;gap:14px;margin-top:16px;">
+        <div class="premium-teaser-card" style="border:1px solid rgba(49,212,113,.25);border-radius:14px;padding:18px;background:rgba(8,15,35,.55);box-shadow:inset 0 0 0 1px rgba(49,212,113,.04);">
+          <div style="font-weight:800;color:#31d471;margin-bottom:8px;">
+            🟢 ${currentLang === "en" ? "Analysis 1 — Discovery" : "Análise 1 — Descoberta"}
+          </div>
+          <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:10px;">
+            ${currentLang === "en"
+              ? `Real market data loaded for ${symbol}. Trend detected automatically, but the exact trigger is still hidden.`
+              : `Dados reais de mercado carregados para ${symbol}. Tendência detectada automaticamente, mas o gatilho exato ainda fica oculto.`}
+          </div>
+          <div style="font-size:12px;line-height:1.45;color:#93c5fd;">
+            ${currentLang === "en"
+              ? "Use the next analysis to validate whether this setup deserves attention."
+              : "Use a próxima análise para validar se esse setup realmente merece atenção."}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (phase === "validation") {
+    return `
+      <div class="premium-teaser-stack" style="display:grid;gap:14px;margin-top:16px;">
+        <div class="premium-teaser-card" style="border:1px solid rgba(250,204,21,.28);border-radius:14px;padding:18px;background:rgba(8,15,35,.55);box-shadow:inset 0 0 0 1px rgba(250,204,21,.06);">
+          <div style="font-weight:800;color:#ffd166;margin-bottom:8px;">
+            🟡 ${currentLang === "en" ? "Analysis 2 — Validation" : "Análise 2 — Validação"}
+          </div>
+          <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:8px;">
+            ${currentLang === "en"
+              ? `Suggested entry based on trend + volume. Confidence: 67%. Recent movement remains consistent for ${symbol}.`
+              : `Entrada sugerida com base em tendência + volume. Confiança: 67%. O movimento recente segue consistente para ${symbol}.`}
+          </div>
+          <div style="font-size:12px;line-height:1.55;color:#ffaa00;">
+            ⚠️ ${currentLang === "en"
+              ? "Setups like this have shown good recent performance."
+              : "Setups como este tiveram boa performance recente."}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (phase === "almost") {
+    return `
+      <div class="premium-teaser-stack" style="display:grid;gap:14px;margin-top:16px;">
+        <div class="premium-teaser-card" style="border:1px solid #1f2a44;border-radius:14px;padding:18px;background:#0b1220;box-shadow:inset 0 0 0 1px rgba(255,77,77,.06);">
+          <div style="font-weight:800;color:#ff4d4d;margin-bottom:8px;">
+            🔴 ${currentLang === "en" ? "Analysis 3 — Almost there" : "Análise 3 — Quase lá"}
+          </div>
+          <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:8px;">
+            ${currentLang === "en"
+              ? `Signal identified. Trend confirmed. Entry structure detected for ${symbol}.`
+              : `Sinal identificado. Tendência confirmada. Estrutura de entrada detectada para ${symbol}.`}
+          </div>
+          <div style="font-size:13px;line-height:1.55;color:#00ff88;margin-bottom:8px;">
+            ✔ ${currentLang === "en" ? "Exact entry + timing + exit are on the next level." : "Entrada exata + timing + saída estão no próximo nível."}
+          </div>
+          <div style="font-size:12px;line-height:1.55;color:#ffaa00;margin-bottom:12px;">
+            ⚠️ ${currentLang === "en" ? "Pro users see this before the move becomes obvious." : "Usuários PRO veem isso antes do movimento começar."}
+          </div>
+          <button type="button" class="cta-primary" data-upgrade-plan="pro" style="min-width:fit-content;">
+            ${currentLang === "en" ? "See full analysis now" : "Ver análise completa agora"}
+          </button>
+        </div>
+      </div>
+    `;
+  }
 
   return `
     <div class="premium-teaser-stack" style="display:grid;gap:14px;margin-top:16px;">
-      ${blocks.map((block, index) => `
-        <div class="premium-teaser-card" style="border:1px solid rgba(49,212,113,.25);border-radius:14px;padding:18px;background:rgba(8,15,35,.55);box-shadow:inset 0 0 0 1px rgba(49,212,113,.04);">
-          <div style="font-weight:800;color:${index === 0 ? '#ff6b6b' : '#ffd166'};margin-bottom:8px;">
-            🔒 ${block.title}
-          </div>
-          <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:10px;">
-            ${block.text}
-          </div>
-          <div style="font-size:12px;line-height:1.45;color:#31d471;margin-bottom:12px;">
-            ${currentLang === "en"
-              ? "Pro users see the full signal and enter before the movement gets obvious."
-              : "Usuários Pro veem o sinal completo e entram antes do movimento ficar óbvio."}
-          </div>
-          <button type="button" class="cta-primary" data-upgrade-plan="pro" style="min-width:fit-content;">
-            ${currentLang === "en" ? "Unlock Pro now" : "Desbloquear PRO"}
-          </button>
+      <div class="premium-teaser-card" style="border:1px solid rgba(255,77,77,.25);border-radius:14px;padding:18px;background:rgba(8,15,35,.68);box-shadow:inset 0 0 0 1px rgba(255,77,77,.05);">
+        <div style="font-weight:800;color:#ff6b6b;margin-bottom:8px;">
+          🔒 ${currentLang === "en" ? "Free limit reached" : "Limite gratuito atingido"}
         </div>
-      `).join("")}
+        <div style="font-size:13px;line-height:1.5;color:#dbeafe;margin-bottom:8px;">
+          ${currentLang === "en"
+            ? "You already saw how the product works."
+            : "Você já viu como funciona."}
+        </div>
+        <div style="font-size:13px;line-height:1.55;color:#00ff88;margin-bottom:8px;">
+          ✔ ${currentLang === "en"
+            ? `Now only the complete analysis is missing to decide with confidence on ${decision}.`
+            : `Agora falta apenas a análise completa para tomar decisão com segurança em ${decision}.`}
+        </div>
+        <div style="font-size:12px;line-height:1.45;color:#ffaa00;margin-bottom:12px;">
+          ${currentLang === "en"
+            ? "Keep the visible chart, but unlock new full reads with Pro."
+            : "Mantenha o gráfico visível, mas libere novas leituras completas com o Pro."}
+        </div>
+        <button type="button" class="cta-primary" data-upgrade-plan="pro" style="min-width:fit-content;">
+          ${currentLang === "en" ? "Unlock complete access" : "Desbloquear acesso completo"}
+        </button>
+      </div>
     </div>
   `;
 }
@@ -2837,14 +3061,21 @@ async function handleSearch(silentRefresh = false) {
       const remaining = usageAfter?.remaining ?? "-";
       const baseStatus = getFriendlyAnalysisStatus(symbol, quote, candles);
       const tone = quote?.error === "QUOTE_UNAVAILABLE" ? "warning" : "success";
-      updateAnalysisStageBadge(`${displaySymbol(symbol)} • ${allowPreviewMode ? (currentLang === "en" ? "Preview active" : "Prévia ativa") : getQuoteSourceLabel(quote)}`, tone);
+      const phase = allowPreviewMode ? "locked" : getConversionPhase(usageAfter);
+      updateAnalysisStageBadge(`${getPhaseTitle(phase)} • ${displaySymbol(symbol)}`, tone);
 
       if (allowPreviewMode) {
         const previewStatus = currentLang === "en"
-          ? `Preview unlocked for ${displaySymbol(symbol)}. The live chart is visible now. Login only when you want favorites, compare or unlimited analyses.`
-          : `Prévia liberada para ${displaySymbol(symbol)}. O gráfico ao vivo já está visível. Faça login apenas quando quiser favoritos, comparação ou análises ilimitadas.`;
+          ? `Free limit reached. ${displaySymbol(symbol)} stays visible, but the complete decision now requires Pro.`
+          : `Limite gratuito atingido. ${displaySymbol(symbol)} continua visível, mas a decisão completa agora exige Pro.`;
         setStatus(previewStatus);
-        await showSmartUpgrade("limit", { symbol, remaining });
+        await showSmartUpgrade("limit", { symbol, remaining, phase });
+      } else if (phase === "discovery") {
+        setStatus(`${baseStatus} ${currentLang === "en" ? "Analysis 1 active: real data + automatic trend detection." : "Análise 1 ativa: dados reais + tendência detectada automaticamente."}`);
+      } else if (phase === "validation") {
+        setStatus(`${baseStatus} ⚠️ ${currentLang === "en" ? "Setups like this have shown good recent performance." : "Setups como este tiveram boa performance recente."}`);
+      } else if (phase === "almost") {
+        setStatus(`${baseStatus} ${currentLang === "en" ? "Almost there: next step unlocks exact entry, timing and exit." : "Quase lá: o próximo passo libera entrada exata, timing e saída."}`);
       } else {
         setStatus(isAnalysisPaused ? `⏸️ ${t("analysisPaused")} • ${baseStatus} ${t("remainingToday")}: ${remaining}` : `${baseStatus} ${t("remainingToday")}: ${remaining}`);
       }
@@ -3555,18 +3786,38 @@ function applyTranslations() {
   if (priceCards[0]) {
     const h3 = priceCards[0].querySelector("h3");
     const p = priceCards[0].querySelector("p");
+    const price = priceCards[0].querySelector(".price, .price-value, strong, .amount");
     if (h3) h3.textContent = t("starter");
-    if (p) p.textContent = t("watchlistNewsChart");
+    if (p) p.textContent = currentLang === "en"
+      ? "For those who want to validate ideas with more precision."
+      : "Para quem quer validar ideias com mais precisão.";
+    if (price) price.textContent = "R$29";
   }
   if (priceCards[1]) {
     const h3 = priceCards[1].querySelector("h3");
     const p = priceCards[1].querySelector("p");
+    const price = priceCards[1].querySelector(".price, .price-value, strong, .amount");
     if (h3) h3.textContent = t("pro");
-    if (p) p.textContent = t("premiumDesc");
+    if (p) p.textContent = currentLang === "en"
+      ? "Full signal, exact timing and complete decision flow."
+      : "Sinal completo, timing exato e fluxo completo de decisão.";
+    if (price) price.textContent = "R$79";
+  }
+  if (priceCards[2]) {
+    const h3 = priceCards[2].querySelector("h3");
+    const p = priceCards[2].querySelector("p");
+    const price = priceCards[2].querySelector(".price, .price-value, strong, .amount");
+    if (h3) h3.textContent = currentLang === "en" ? "Pro Lite" : "Pro Lite";
+    if (p) p.textContent = currentLang === "en"
+      ? "Limited access for users who already know what they want."
+      : "Acesso limitado para usuários que já sabem o que querem.";
+    if (price) price.textContent = "R$39";
   }
 
-  if (starterBtn) starterBtn.textContent = currentLang === "en" ? "Subscribe Starter" : "Assinar Starter";
-  if (proBtn) proBtn.textContent = currentLang === "en" ? "Subscribe Pro" : "Assinar Pro";
+  if (starterBtn) starterBtn.textContent = currentLang === "en" ? "Subscribe Starter • R$29" : "Assinar Starter • R$29";
+  if (proBtn) proBtn.textContent = currentLang === "en" ? "Subscribe Pro • R$79" : "Assinar Pro • R$79";
+  ensureDataTrustFooter();
+  ensureFreeDemoCard();
 
   if (symbolInput) symbolInput.placeholder = t("symbolPlaceholder");
   if (compareInput) compareInput.placeholder = t("comparePlaceholder");
@@ -3773,6 +4024,8 @@ async function init() {
   ensureNetworkBanner();
   handleBrowserConnectivityChange();
   ensureTimeframeControls();
+  ensureDataTrustFooter();
+  ensureFreeDemoCard();
   clearAnalysisUI();
   renderFavorites();
   syncActiveMarketButtons();
@@ -3971,40 +4224,47 @@ function updateUsageUI(data) {
 
   const usageBadge = getUsageBadge();
   if (usageBadge) {
+    const phase = getConversionPhase(usageData);
     usageBadge.textContent = getUsageBadgeMessage(usageData);
     usageBadge.title = isUnlimitedAccessUser()
       ? (currentLang === "en" ? "Unlimited analyses available today" : "Análises ilimitadas disponíveis hoje")
       : (currentLang === "en"
-          ? `Used today: ${usageData.used ?? 0} • Remaining: ${usageData.remaining}`
-          : `Usadas hoje: ${usageData.used ?? 0} • Restantes: ${usageData.remaining}`);
+          ? `Stage: ${getPhaseTitle(phase)} • Used today: ${usageData.used ?? 0} • Remaining: ${usageData.remaining}`
+          : `Etapa: ${getPhaseTitle(phase)} • Usadas hoje: ${usageData.used ?? 0} • Restantes: ${usageData.remaining}`);
     usageBadge.dataset.state = isUnlimitedAccessUser()
       ? "unlimited"
-      : Number(usageData.remaining) <= 0 ? "locked" : Number(usageData.remaining) === 1 ? "warning" : "active";
+      : phase === "locked" ? "locked" : phase === "almost" ? "warning" : "active";
   }
 
   if (searchBtn) {
     const blocked = !isUnlimitedAccessUser() && usageData.limit !== "∞" && Number(usageData.remaining) <= 0;
+    const phase = getConversionPhase(usageData);
     searchBtn.disabled = false;
     searchBtn.style.opacity = "1";
     searchBtn.textContent = blocked
-      ? (currentLang === "en" ? "Unlock now" : "Desbloquear agora")
-      : t("analyze");
+      ? (currentLang === "en" ? "Unlock complete analysis" : "Desbloquear análise completa")
+      : phase === "almost"
+        ? (currentLang === "en" ? "See final free signal" : "Ver sinal final grátis")
+        : t("analyze");
   }
 
   if (isUnlimitedAccessUser()) {
     updateUpgradeBanner({ visible: false });
-  } else if (Number(usageData.remaining) <= 1 && Number(usageData.limit) !== Infinity) {
-    updateUpgradeBanner({
-      visible: true,
-      title: Number(usageData.remaining) <= 0
-        ? (currentLang === "en" ? "Limit reached — unlock unlimited analyses now" : "Limite atingido — desbloqueie análises ilimitadas agora")
-        : (currentLang === "en" ? "You are on your last free analysis" : "Você está na sua última análise grátis"),
-      subtitle: currentLang === "en"
-        ? "Keep the live chart visible and unlock new analyses, comparison and premium signals."
-        : "Mantenha o gráfico ao vivo visível e desbloqueie novas análises, comparação e sinais premium.",
-      cta: currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro",
-      plan: "pro"
-    });
+  } else {
+    const phase = getConversionPhase(usageData);
+    if (phase === "almost" || phase === "locked") {
+      updateUpgradeBanner({
+        visible: true,
+        title: phase === "locked"
+          ? (currentLang === "en" ? "Free limit reached — unlock the complete decision" : "Limite gratuito atingido — desbloqueie a decisão completa")
+          : (currentLang === "en" ? "Almost there — exact entry, timing and exit are next" : "Quase lá — entrada exata, timing e saída estão no próximo passo"),
+        subtitle: currentLang === "en"
+          ? "You already felt the value. Now unlock the complete analysis, comparison and premium timing."
+          : "Você já sentiu o valor. Agora libere a análise completa, comparação e timing premium.",
+        cta: currentLang === "en" ? "Upgrade to Pro" : "Fazer upgrade para Pro",
+        plan: "pro"
+      });
+    }
   }
 
   toggleAdminSection();
@@ -4260,11 +4520,11 @@ async function showSmartUpgrade(kind, extra = {}) {
 
   if (kind === "limit") {
     title = currentLang === "en"
-      ? "Limit reached — unlock unlimited analyses now"
-      : "Limite atingido — desbloqueie análises ilimitadas agora";
+      ? "Free limit reached — unlock the complete decision"
+      : "Limite gratuito atingido — desbloqueie a decisão completa";
     subtitle = currentLang === "en"
-      ? "Keep the chart visible and unlock unlimited analyses, comparison and premium signals."
-      : "Mantenha o gráfico visível e libere análises ilimitadas, comparação e sinais premium.";
+      ? "You already saw the signal, trend and structure. Now unlock exact entry, timing and exit."
+      : "Você já viu o sinal, a tendência e a estrutura. Agora libere entrada exata, timing e saída.";
     plan = "pro";
   }
 
